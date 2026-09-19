@@ -1,0 +1,39 @@
+[submodule "libs/Styx"]
+	path = libs/Styx
+	url = https://github.com/Vanaheimr/Styx.git
+[submodule "libs/Hermod"]
+	path = libs/Hermod
+	url = https://github.com/Vanaheimr/Hermod.git
+[submodule "libs/Norn"]
+	path = libs/Norn
+	url = https://github.com/Vanaheimr/Norn.git
+[submodule "libs/WWCP_ISO15118"]
+	path = libs/WWCP_ISO15118
+	url = https://github.com/OpenChargingCloud/WWCP_ISO15118.git
+[submodule "libs/Urdr"]
+	path = libs/Urdr
+	url = https://github.com/Vanaheimr/Urdr.git
+[submodule "libs/ChargyCore.NET"]
+	path = libs/ChargyCore.NET
+	url = https://github.com/OpenChargingCloud/ChargyCore.NET.git
+[submodule "libs/EV"]
+	path = libs/EV
+	url = https://github.com/OpenChargingCloud/EV.git
+[submodule "libs/ChargingStation"]
+	path = libs/ChargingStation
+	url = https://github.com/OpenChargingCloud/ChargingStation.git
+[submodule "libs/LocalController"]
+	path = libs/LocalController
+	url = https://github.com/OpenChargingCloud/LocalController.git
+[submodule "libs/CSMS"]
+	path = libs/CSMS
+	url = https://github.com/OpenChargingCloud/CSMS.git
+[submodule "libs/WWCP_Core"]
+	path = libs/WWCP_Core
+	url = https://github.com/OpenChargingCloud/WWCP_Core.git
+[submodule "libs/WWCP_OCPP"]
+	path = libs/WWCP_OCPP
+	url = https://github.com/OpenChargingCloud/WWCP_OCPP.git
+[submodule "libs/MCP"]
+	path = libs/MCP
+	url = https://github.com/Vanaheimr/MCP.git

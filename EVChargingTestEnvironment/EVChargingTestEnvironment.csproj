@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>cloud.charging.open.TestEnvironment</RootNamespace>
+    <AssemblyName>EVChargingTestEnvironment</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+
+    <!-- The four things this environment starts. Each one is its own
+         repository and its own program elsewhere; here they are four
+         objects in one process. -->
+    <ProjectReference Include="..\libs\EV\EV\EV.csproj" />
+    <ProjectReference Include="..\libs\ChargingStation\ChargingStation\ChargingStation.csproj" />
+    <ProjectReference Include="..\libs\LocalController\LocalController\LocalController.csproj" />
+    <ProjectReference Include="..\libs\CSMS\CSMS\CSMS.csproj" />
+
+    <ProjectReference Include="..\libs\Styx\Styx\Styx.csproj" />
+    <ProjectReference Include="..\libs\Hermod\Hermod\Hermod.csproj" />
+    <ProjectReference Include="..\libs\Norn\Norn\Norn.csproj" />
+
+    <!-- The PKI is built here, before anything is started, and handed out
+         from here: that is the one thing this repository does that none of
+         the four single-component repositories can do for themselves. -->
+    <ProjectReference Include="..\libs\WWCP_ISO15118\WWCP_ISO15118_PKI\WWCP_ISO15118_PKIBuilder\WWCP_ISO15118_PKIBuilder.csproj" />
+
+    <!-- The temperature sensors in an MCS coupler's pins are nodes on the
+         station's 10BASE-T1S bus, and on a bench they are objects of this
+         environment rather than of the station: a sensor is a thing on the
+         same wire that the station asks, not the station's own software. -->
+    <ProjectReference Include="..\libs\WWCP_ISO15118\WWCP_ISO15118_T1S\WWCP_ISO15118_T1S.csproj" />
+
+    <ProjectReference Include="..\libs\WWCP_ISO15118\WWCP_ISO15118_NetworkInterfaces\WWCP_ISO15118_NetworkInterfaces.csproj" />
+    <ProjectReference Include="..\libs\WWCP_ISO15118\WWCP_ISO15118_SDP\WWCP_ISO15118_SDP.csproj" />
+
+  </ItemGroup>
+
+</Project>
