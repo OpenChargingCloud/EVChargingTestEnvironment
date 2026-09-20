@@ -16,10 +16,24 @@
 #
 # Needs 'sass' (npm i -g sass). Idempotent: run it again and it overwrites what
 # it wrote before.
+#
+# Usage:  bash tools/build-webassets.sh [<repository>]
 
 set -e
 
-cd "$(dirname "$0")/.."
+# The repository to generate them in: the one this script lives in, or another
+# checkout named on the command line. The sibling CLIs keep their own copies of
+# the same submodules and hit the same missing resource, and a script that can
+# only ever fix its own checkout would have to be copied into each of them.
+root="${1:-$(dirname "$0")/..}"
+
+if [ ! -d "$root/libs" ]
+then
+    echo "'$root' has no libs/ directory - is it a checkout of one of these repositories?" >&2
+    exit 1
+fi
+
+cd "$root"
 
 if ! command -v sass > /dev/null 2>&1
 then

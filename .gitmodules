@@ -37,3 +37,6 @@
 [submodule "libs/MCP"]
 	path = libs/MCP
 	url = https://github.com/Vanaheimr/MCP.git
+[submodule "libs/EMSP"]
+	path = libs/EMSP
+	url = https://github.com/OpenChargingCloud/EMSP.git
