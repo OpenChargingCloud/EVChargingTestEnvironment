@@ -33,13 +33,13 @@ namespace cloud.charging.open.TestEnvironment
     #region (enum) WebInterfaceLayout
 
     /// <summary>
-    /// How the four web interfaces are put in front of a browser.
+    /// How the five web interfaces are put in front of a browser.
     /// </summary>
     public enum WebInterfaceLayout
     {
 
         /// <summary>
-        /// Four HTTP servers on four ports, each component its own, each with
+        /// Five HTTP servers on five ports, each component its own, each with
         /// accounts of its own. What each of these programs does when it is
         /// started on its own, and the default here for the same reason: it is
         /// the arrangement a bug found here is also a bug in.
@@ -47,10 +47,10 @@ namespace cloud.charging.open.TestEnvironment
         OwnPorts,
 
         /// <summary>
-        /// One HTTP server on one port, the four of them told apart by the
+        /// One HTTP server on one port, the five of them told apart by the
         /// first path segment - <c>/EV/…</c>, <c>/ChargingStation/…</c>,
-        /// <c>/LocalController/…</c>, <c>/CSMS/…</c> - and one set of accounts
-        /// below <c>/ext</c> that all four sign in against.
+        /// <c>/LocalController/…</c>, <c>/CSMS/…</c>, <c>/EMSP/…</c> - and one set of accounts
+        /// below <c>/ext</c> that all five sign in against.
         /// </summary>
         SharedServer
 
@@ -64,7 +64,7 @@ namespace cloud.charging.open.TestEnvironment
     /// value that is settled before anything is built.
     /// </summary>
     /// <remarks>
-    /// Unlike the four programs this one stands in for, almost nothing here is
+    /// Unlike the five programs this one stands in for, almost nothing here is
     /// written to a configuration file. What a <em>vehicle</em> is belongs in
     /// the vehicle's configuration and is written there; how many ports a test
     /// bench opened this morning does not, and a test environment that
@@ -88,11 +88,11 @@ namespace cloud.charging.open.TestEnvironment
         public const UInt16  DefaultBasePort   = 2347;
 
         /// <summary>
-        /// Where the four components keep what they write down, below the
+        /// Where the five components keep what they write down, below the
         /// repository root unless another place is named.
         /// </summary>
         /// <remarks>
-        /// One directory per component below it, because all four call their
+        /// One directory per component below it, because all five call their
         /// configuration file <c>configuration.json</c> and every other file
         /// each of them keeps - accounts, keys, trust stores, logins - lives
         /// beside that one.
@@ -103,7 +103,7 @@ namespace cloud.charging.open.TestEnvironment
 
         #region Properties
 
-        /// <summary>Where the four components keep what they write down.</summary>
+        /// <summary>Where the five components keep what they write down.</summary>
         public String              DataPath            { get; init; } = DefaultDataPath;
 
         /// <summary>Where the certificates live.</summary>
@@ -122,7 +122,7 @@ namespace cloud.charging.open.TestEnvironment
         /// <summary>Listen on every address rather than on the loopback alone.</summary>
         public Boolean             AnyAddress          { get; init; }
 
-        /// <summary>Four servers and four sets of accounts, or one of each.</summary>
+        /// <summary>Five servers and five sets of accounts, or one of each.</summary>
         public WebInterfaceLayout  Layout              { get; init; } = WebInterfaceLayout.OwnPorts;
 
 
@@ -131,6 +131,18 @@ namespace cloud.charging.open.TestEnvironment
 
         /// <summary>Leave the vehicle out.</summary>
         public Boolean             NoVehicle           { get; init; }
+
+        /// <summary>
+        /// Leave the EMSP out.
+        /// </summary>
+        /// <remarks>
+        /// The one of the five that nothing else here dials: an EMSP is the
+        /// other end of an OCPI roaming agreement, and there is no CPO
+        /// speaking OCPI on this bench yet. It runs all the same - its web
+        /// interface, its OCPI endpoints and its log - so that a partner can
+        /// be pointed at it, which is what the switch is for when none will.
+        /// </remarks>
+        public Boolean             NoEMSP              { get; init; }
 
         /// <summary>Leave the station's display out - it is a second HTTP server on a port of its own.</summary>
         public Boolean             NoKiosk             { get; init; }
@@ -212,7 +224,7 @@ namespace cloud.charging.open.TestEnvironment
         /// The vehicle's web interface - or the one port they all share.
         /// </summary>
         /// <remarks>
-        /// The four web-interface ports collapse onto one where the four share
+        /// The five web-interface ports collapse onto one where the five share
         /// a server, and they have to: each component builds the URL it reports
         /// on its Configuration page and logs at a start out of the port it was
         /// given, so one that kept its own would name a port nothing is
@@ -280,11 +292,21 @@ namespace cloud.charging.open.TestEnvironment
                );
 
         /// <summary>
+        /// The EMSP's web interface - and its OCPI endpoints, which are on
+        /// the same server below <c>/ext</c>.
+        /// </summary>
+        /// <remarks>
+        /// Beyond the bus rather than before it, so that the seven ports the
+        /// four original components take keep the numbers they always had.
+        /// </remarks>
+        public IPPort  EMSPPort              => Shared ? SharedPort : IPPort.Parse((UInt16) (BasePort + 8));
+
+        /// <summary>
         /// The one port everything is on when they share a server.
         /// </summary>
         /// <remarks>
         /// The vehicle's, which is the address somebody who has used any of
-        /// these before already has in their history - and the four web
+        /// these before already has in their history - and the five web
         /// interfaces are then one path segment apart rather than one port.
         /// </remarks>
         public IPPort  SharedPort            => IPPort.Parse(BasePort);
@@ -305,14 +327,17 @@ namespace cloud.charging.open.TestEnvironment
         /// <summary>What the CSMS's web interface sits below.</summary>
         public static readonly HTTPPath  CSMSBasePath        = HTTPPath.Parse("/CSMS");
 
-        /// <summary>Where the accounts all four sign in against live.</summary>
+        /// <summary>What the EMSP's web interface sits below.</summary>
+        public static readonly HTTPPath  EMSPBasePath        = HTTPPath.Parse("/EMSP");
+
+        /// <summary>Where the accounts all five sign in against live.</summary>
         public static readonly HTTPPath  SharedExtAPIPath    = HTTPPath.Parse("/ext");
 
         #endregion
 
         #region Whether they share
 
-        /// <summary>Whether the four run on one HTTP server.</summary>
+        /// <summary>Whether the five run on one HTTP server.</summary>
         public Boolean Shared
             => Layout == WebInterfaceLayout.SharedServer;
 
@@ -327,7 +352,7 @@ namespace cloud.charging.open.TestEnvironment
         /// </summary>
         /// <remarks>
         /// The loopback address even when every address is being listened on:
-        /// these four are talking to each other inside one process, and a URL
+        /// these components are talking to each other inside one process, and a URL
         /// naming <c>0.0.0.0</c> is a URL that connects nowhere.
         /// </remarks>
         public String Host
@@ -349,8 +374,11 @@ namespace cloud.charging.open.TestEnvironment
         /// <summary>The CSMS's directory.</summary>
         public String CSMSDirectory        => Path.Combine(DataPath, "CSMS");
 
+        /// <summary>The EMSP's directory.</summary>
+        public String EMSPDirectory        => Path.Combine(DataPath, "EMSP");
+
         /// <summary>
-        /// The accounts all four share, where they share a server.
+        /// The accounts all five share, where they share a server.
         /// </summary>
         public String SharedAccountsPath   => Path.Combine(DataPath, "accounts");
 

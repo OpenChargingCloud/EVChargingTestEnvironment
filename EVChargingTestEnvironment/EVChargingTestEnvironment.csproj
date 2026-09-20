@@ -11,13 +11,14 @@
 
   <ItemGroup>
 
-    <!-- The four things this environment starts. Each one is its own
-         repository and its own program elsewhere; here they are four
+    <!-- The five things this environment starts. Each one is its own
+         repository and its own program elsewhere; here they are five
          objects in one process. -->
     <ProjectReference Include="..\libs\EV\EV\EV.csproj" />
     <ProjectReference Include="..\libs\ChargingStation\ChargingStation\ChargingStation.csproj" />
     <ProjectReference Include="..\libs\LocalController\LocalController\LocalController.csproj" />
     <ProjectReference Include="..\libs\CSMS\CSMS\CSMS.csproj" />
+    <ProjectReference Include="..\libs\EMSP\EMSP\EMSP.csproj" />
 
     <ProjectReference Include="..\libs\Styx\Styx\Styx.csproj" />
     <ProjectReference Include="..\libs\Hermod\Hermod\Hermod.csproj" />

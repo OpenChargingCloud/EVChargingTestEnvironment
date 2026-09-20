@@ -40,3 +40,6 @@
 [submodule "libs/EMSP"]
 	path = libs/EMSP
 	url = https://github.com/OpenChargingCloud/EMSP.git
+[submodule "libs/WWCP_OCPI"]
+	path = libs/WWCP_OCPI
+	url = https://github.com/OpenChargingCloud/WWCP_OCPI.git

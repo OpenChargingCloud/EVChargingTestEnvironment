@@ -31,21 +31,22 @@ namespace cloud.charging.open.TestEnvironment
 {
 
     /// <summary>
-    /// A vehicle, a charging station, a local controller and a CSMS, with the
-    /// certificates they need and pointed at each other, until Ctrl+C.
+    /// A vehicle, a charging station, a local controller, a CSMS and an EMSP,
+    /// with the certificates they need and pointed at each other, until Ctrl+C.
     /// </summary>
     /// <remarks>
     /// <para>
     /// The switches here are about the <em>site</em> and nothing else: how many
-    /// of the four there are, which ports they take, where their certificates
-    /// come from. What each of the four <em>is</em> - what the vehicle's
+    /// of the five there are, which ports they take, where their certificates
+    /// come from. What each of the five <em>is</em> - what the vehicle's
     /// battery holds, how many EVSEs the station has, what the CSMS calls
-    /// itself in OCPP - is said in that component's own configuration file and
-    /// on its own Configuration page, exactly as it would be if it were running
-    /// on its own. This program does not repeat their vocabularies.
+    /// itself in OCPP, whom the EMSP roams with - is said in that component's
+    /// own configuration file and on its own Configuration page, exactly as it
+    /// would be if it were running on its own. This program does not repeat
+    /// their vocabularies.
     /// </para>
     /// <para>
-    /// That is deliberate. Four programs' worth of switches on one command line
+    /// That is deliberate. Five programs' worth of switches on one command line
     /// would be several hundred of them, and every one would be a second place
     /// where a setting can be written down and come to disagree with the first.
     /// </para>
@@ -140,32 +141,36 @@ namespace cloud.charging.open.TestEnvironment
         {
             Console.WriteLine("Usage: EVChargingTestEnvironment [--base-port <number>] [--any] [--shared]");
             Console.WriteLine("                                 [--data <dir>] [--pki <dir>] [--fresh-pki] [--evil-certs]");
-            Console.WriteLine("                                 [--no-lc] [--no-vehicle] [--no-kiosk] [--no-v2g] [--ocpp-tls]");
+            Console.WriteLine("                                 [--no-lc] [--no-vehicle] [--no-emsp] [--no-kiosk] [--no-v2g]");
+            Console.WriteLine("                                 [--ocpp-tls]");
             Console.WriteLine("                                 [--mcs [--mcs-sensors <n>] [--mcs-current <A>]]");
             Console.WriteLine("                                 [--interface <name>] [--frontend-from-disk]");
             Console.WriteLine("                                 [--verbose | --quiet] [--no-trace]");
             Console.WriteLine("                                 [--sdp] [--charge]");
             Console.WriteLine();
-            Console.WriteLine("A vehicle, a charging station, a local controller and a CSMS in one process,");
-            Console.WriteLine("with an ISO 15118 PKI and an OCPP PKI built first and handed out to them.");
+            Console.WriteLine("A vehicle, a charging station, a local controller, a CSMS and an EMSP in one");
+            Console.WriteLine("process, with an ISO 15118 PKI and an OCPP PKI built first and handed out to them.");
             Console.WriteLine();
-            Console.WriteLine("What each of the four is - its battery, its EVSEs, its OCPP identity - is said in");
-            Console.WriteLine("its own configuration file below --data and on its own Configuration page, the");
-            Console.WriteLine("same as when it runs alone. The switches here are about the site.");
+            Console.WriteLine("What each of the five is - its battery, its EVSEs, its OCPP identity, its OCPI");
+            Console.WriteLine("party - is said in its own configuration file below --data and on its own");
+            Console.WriteLine("Configuration page, the same as when it runs alone. The switches here are about");
+            Console.WriteLine("the site.");
             Console.WriteLine();
             Console.WriteLine("Where they listen:");
             Console.WriteLine($"  --base-port <n>   the first port taken (default: {TestEnvironmentOptions.DefaultBasePort}); everything counts up from it:");
             Console.WriteLine("                    n+0 vehicle, n+1 station, n+2 display, n+3 local controller,");
-            Console.WriteLine("                    n+4 CSMS, n+5 the CSMS's OCPP port, n+6 the controller's");
+            Console.WriteLine("                    n+4 CSMS, n+5 the CSMS's OCPP port, n+6 the controller's,");
+            Console.WriteLine("                    n+7 the coupler's bus under --mcs, n+8 EMSP - its OCPI");
+            Console.WriteLine("                    endpoints are below /ext on that same port");
             Console.WriteLine("  --any             listen on all addresses instead of 127.0.0.1");
-            Console.WriteLine("  --shared          one HTTP server on one port instead of four, the four web");
+            Console.WriteLine("  --shared          one HTTP server on one port instead of five, the five web");
             Console.WriteLine("                    interfaces told apart by the first path segment - /EV/...,");
-            Console.WriteLine("                    /ChargingStation/..., /LocalController/..., /CSMS/... - and one");
-            Console.WriteLine("                    set of accounts below /ext that all four sign in against, so");
-            Console.WriteLine("                    that one sign-in opens all four");
+            Console.WriteLine("                    /ChargingStation/..., /LocalController/..., /CSMS/..., /EMSP/...");
+            Console.WriteLine("                    - and one set of accounts below /ext that all five sign in");
+            Console.WriteLine("                    against, so that one sign-in opens all five");
             Console.WriteLine();
             Console.WriteLine("What is written down:");
-            Console.WriteLine($"  --data <dir>      where the four keep their configuration, accounts and keys");
+            Console.WriteLine($"  --data <dir>      where the five keep their configuration, accounts and keys");
             Console.WriteLine($"                    (default: {TestEnvironmentOptions.DefaultDataPath}/ below the repository root), one directory each");
             Console.WriteLine("  --pki <dir>       where the certificates live (default: below --data)");
             Console.WriteLine("  --fresh-pki       build them again even where they are intact. Every OCPP");
@@ -176,6 +181,9 @@ namespace cloud.charging.open.TestEnvironment
             Console.WriteLine("How much of a site:");
             Console.WriteLine("  --no-lc           leave the local controller out; the station dials the CSMS");
             Console.WriteLine("  --no-vehicle      leave the vehicle out");
+            Console.WriteLine("  --no-emsp         leave the EMSP out. Nothing here dials it anyway: it is the");
+            Console.WriteLine("                    other end of an OCPI roaming agreement, there for a CPO to");
+            Console.WriteLine("                    be pointed at");
             Console.WriteLine("  --no-kiosk        leave the station's display out - it is a second server");
             Console.WriteLine("  --no-v2g          put nothing on the wire below the charging cable: no SLAC,");
             Console.WriteLine("                    no SDP, no V2G endpoint. The OCPP half still runs");
@@ -250,6 +258,7 @@ namespace cloud.charging.open.TestEnvironment
 
             var      noLocalController = false;
             var      noVehicle         = false;
+            var      noEMSP            = false;
             var      noKiosk           = false;
             var      noV2G             = false;
             var      ocppTLS           = false;
@@ -320,6 +329,10 @@ namespace cloud.charging.open.TestEnvironment
 
                     case "--no-vehicle":
                         noVehicle = true;
+                        break;
+
+                    case "--no-emsp":
+                        noEMSP = true;
                         break;
 
                     case "--no-kiosk":
@@ -448,6 +461,7 @@ namespace cloud.charging.open.TestEnvironment
 
                                NoLocalController = noLocalController,
                                NoVehicle         = noVehicle,
+                               NoEMSP            = noEMSP,
                                NoKiosk           = noKiosk,
                                NoV2G             = noV2G,
                                OCPPTLS           = ocppTLS,
@@ -516,7 +530,7 @@ namespace cloud.charging.open.TestEnvironment
                     // paragraph about ports that sent whoever read it looking
                     // for a second copy that was never running.
                     if (LooksLikeAPortInUse(e))
-                        Console.Error.WriteLine("Another copy of it already running is the usual answer - seven ports are taken here. " +
+                        Console.Error.WriteLine("Another copy of it already running is the usual answer - eight ports are taken here. " +
                                                 "Stop it, or move this one out of the way with --base-port <number>.");
 
                     if (verbose)
@@ -534,6 +548,11 @@ namespace cloud.charging.open.TestEnvironment
 
                 foreach (var (name, url) in environment.WebInterfaces)
                     Console.WriteLine($"  {name,-17} {url}");
+
+                // The one URL a roaming partner is given; everything else of
+                // OCPI is found from it.
+                if (environment.EMSP is not null)
+                    Console.WriteLine($"  {"OCPI versions",-17} {environment.EMSP.OCPIVersionsURL}");
 
                 Console.WriteLine();
 
@@ -619,7 +638,7 @@ namespace cloud.charging.open.TestEnvironment
         /// ports.
         /// </summary>
         /// <remarks>
-        /// Asked of the whole chain, because the four components wrap it
+        /// Asked of the whole chain, because the five components wrap it
         /// differently on the way up: one of them has an exception of its own
         /// for a port it could not take, and the others let the socket error
         /// through.

@@ -27,6 +27,7 @@ using EVRoles        = cloud.charging.open.EV.Web;
 using StationRoles   = cloud.charging.open.ChargingStation.Web;
 using ControlRoles   = cloud.charging.open.LocalController.Web;
 using CSMSRoles      = cloud.charging.open.CSMS.Web;
+using EMSPRoles      = cloud.charging.open.EMSP.Web;
 
 #endregion
 
@@ -34,25 +35,26 @@ namespace cloud.charging.open.TestEnvironment
 {
 
     /// <summary>
-    /// The one set of accounts all four components sign in against when they
+    /// The one set of accounts all five components sign in against when they
     /// share an HTTP server.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// On its own, each of these four builds an <c>HTTPExtAPI</c> of its own at
-    /// <c>/ext</c>, with a database of its own. Four of those on one server
+    /// On its own, each of these five builds an <c>HTTPExtAPI</c> of its own at
+    /// <c>/ext</c>, with a database of its own. Five of those on one server
     /// cannot work - the second one to register at <c>/ext</c> is refused - and
-    /// would not be wanted if it could: four sign-ins for four pages of one
-    /// site is four passwords to keep, and the rights somebody has at the CSMS
+    /// would not be wanted if it could: five sign-ins for five pages of one
+    /// site is five passwords to keep, and the rights somebody has at the CSMS
     /// would say nothing about what they may do at the station.
     /// </para>
     /// <para>
     /// So in the shared arrangement exactly one of these is built, here, and
-    /// handed to all four. The groups a role is carried by are made by each
+    /// handed to all five. The groups a role is carried by are made by each
     /// component as it starts, as they always are, and they land in this one
-    /// database: the names overlap on purpose - all four have
-    /// <c>systemadmin</c> and <c>viewer</c>, three of them have <c>cpo</c> -
-    /// so an account in <c>systemadmin</c> is an administrator of all four at
+    /// database: the names overlap on purpose - all five have
+    /// <c>systemadmin</c> and <c>viewer</c>, three of them have <c>cpo</c>
+    /// and the EMSP has <c>emsp</c> where those have <c>cpo</c> -
+    /// so an account in <c>systemadmin</c> is an administrator of all five at
     /// once. That is the single sign-on, and it is a consequence of the roles
     /// rather than a mechanism bolted beside them.
     /// </para>
@@ -68,10 +70,10 @@ namespace cloud.charging.open.TestEnvironment
         #region Build(HTTPServer, Path, AccountsPath)
 
         /// <summary>
-        /// One HTTPExt API for the four of them.
+        /// One HTTPExt API for the five of them.
         /// </summary>
         /// <param name="HTTPServer">The one server they all register within.</param>
-        /// <param name="Path">Where it sits - "/ext", beside the four components' own paths rather than below any of them.</param>
+        /// <param name="Path">Where it sits - "/ext", beside the five components' own paths rather than below any of them.</param>
         /// <param name="AccountsPath">Where the accounts live between starts.</param>
         public static HTTPExtAPI Build(HTTPServer  HTTPServer,
                                        HTTPPath    Path,
@@ -96,7 +98,7 @@ namespace cloud.charging.open.TestEnvironment
                        APIRobotGPGPassphrase:  "",
 
                        // Nothing here sends mail, for the same reason none of
-                       // the four does on its own: a test bench has no
+                       // the five does on its own: a test bench has no
                        // submission client, and a mailer that swallows what it
                        // is given is better than one quietly retrying against a
                        // host nobody configured.
@@ -104,18 +106,18 @@ namespace cloud.charging.open.TestEnvironment
                        DisableNotifications:   true,
 
                        // "/" and not this API's own root path: the cookie has
-                       // to reach /EV/api, /ChargingStation/api, /LocalController/api
-                       // and /CSMS/api, and a cookie scoped to /ext would be
+                       // to reach /EV/api, /ChargingStation/api, /LocalController/api,
+                       // /CSMS/api and /EMSP/api, and a cookie scoped to /ext would be
                        // sent to none of them - a browser signed in at
-                       // /ext/login would look signed out on all four pages.
+                       // /ext/login would look signed out on all five pages.
                        HTTPCookiePath:         "/",
 
                        // A secure cookie is dropped by a browser over plain
                        // HTTP, and a test bench is reached over plain HTTP.
                        UseSecureCookies:       false,
 
-                       // The shortest group identification any of the four
-                       // needs, across all four rather than one of them: the
+                       // The shortest group identification any of the five
+                       // needs, across all five rather than one of them: the
                        // local controller's "cpo" is three characters, and
                        // Hermod's own floor is four. A group that is refused
                        // leaves a role nobody can ever hold, and the refusal
@@ -141,11 +143,11 @@ namespace cloud.charging.open.TestEnvironment
         #region ShortestRoleName
 
         /// <summary>
-        /// The shortest name any role of any of the four components has.
+        /// The shortest name any role of any of the five components has.
         /// </summary>
         /// <remarks>
-        /// Asked of all four rather than written down as a number, so that a
-        /// role added in any of those four repositories cannot quietly become a
+        /// Asked of all five rather than written down as a number, so that a
+        /// role added in any of those five repositories cannot quietly become a
         /// role nobody here can hold.
         /// </remarks>
         public static Byte ShortestRoleName
@@ -154,7 +156,8 @@ namespace cloud.charging.open.TestEnvironment
                           EVRoles.     UserRole.All.Min(role => role.Name.Length),
                           StationRoles.UserRole.All.Min(role => role.Name.Length),
                           ControlRoles.UserRole.All.Min(role => role.Name.Length),
-                          CSMSRoles.   UserRole.All.Min(role => role.Name.Length)
+                          CSMSRoles.   UserRole.All.Min(role => role.Name.Length),
+                          EMSPRoles.   UserRole.All.Min(role => role.Name.Length)
                       }.Min();
 
         #endregion

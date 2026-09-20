@@ -22,6 +22,7 @@ using EVLog       = cloud.charging.open.EV.Logging;
 using StationLog  = cloud.charging.open.ChargingStation.Logging;
 using ControlLog  = cloud.charging.open.LocalController.Logging;
 using CSMSLog     = cloud.charging.open.CSMS.Logging;
+using EMSPLog     = cloud.charging.open.EMSP.Logging;
 
 #endregion
 
@@ -29,30 +30,30 @@ namespace cloud.charging.open.TestEnvironment
 {
 
     /// <summary>
-    /// Four event logs on one console, each line saying which of the four it
+    /// Five event logs on one console, each line saying which of the five it
     /// came from.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The four components each carry an event log of their own, in a namespace
-    /// of their own - four copies of the same forty lines, because each of them
+    /// The five components each carry an event log of their own, in a namespace
+    /// of their own - five copies of the same forty lines, because each of them
     /// is a program that ships alone and none of them may depend on another.
-    /// Four separate types, therefore, and no way to hand one log to all four.
+    /// Five separate types, therefore, and no way to hand one log to all five.
     /// </para>
     /// <para>
     /// That is not worth changing for this: what each web interface shows under
     /// <em>Logs</em> is that component's own log, which is exactly what it
-    /// shows when the component runs alone, and the one place the four have to
+    /// shows when the component runs alone, and the one place the five have to
     /// be read together is the console. So they are brought together here, at
     /// the one place where it matters, and each line is prefixed with who said
-    /// it - which four <c>ConsoleLog</c>s of their own would not do, and which
-    /// is the whole difficulty of reading four programs at once.
+    /// it - which five <c>ConsoleLog</c>s of their own would not do, and which
+    /// is the whole difficulty of reading five programs at once.
     /// </para>
     /// <para>
-    /// The four <c>Attach</c> methods below are the same method four times
-    /// because their parameters are four unrelated types with the same shape.
+    /// The five <c>Attach</c> methods below are the same method five times
+    /// because their parameters are five unrelated types with the same shape.
     /// C# has no way to say that, and inventing an interface for it would mean
-    /// changing four repositories to add something only this one uses.
+    /// changing five repositories to add something only this one uses.
     /// </para>
     /// </remarks>
     public sealed class ConsoleMux
@@ -74,7 +75,7 @@ namespace cloud.charging.open.TestEnvironment
         #region Constructor(s)
 
         /// <summary>
-        /// One console for four logs.
+        /// One console for five logs.
         /// </summary>
         /// <param name="MinimumLevel">Entries below this stay off the console. They are still in each component's own log, where there is room for them.</param>
         /// <param name="Colours">Whether the level and the component are coloured; off by itself when the output is redirected.</param>
@@ -88,7 +89,7 @@ namespace cloud.charging.open.TestEnvironment
         #endregion
 
 
-        #region Attach(Log, Name) - once per component, because the types are four
+        #region Attach(Log, Name) - once per component, because the types are five
 
         /// <summary>The vehicle's log.</summary>
         public void Attach(EVLog.EventLog Log, String Name)
@@ -138,13 +139,25 @@ namespace cloud.charging.open.TestEnvironment
                                             entry.Message
                                         );
 
+        /// <summary>The EMSP's log.</summary>
+        public void Attach(EMSPLog.EventLog Log, String Name)
+
+            => Log.OnLogged += entry => Write(
+                                            Name,
+                                            (Int32) entry.Level,
+                                            entry.Timestamp,
+                                            entry.LevelName,
+                                            entry.Tags,
+                                            entry.Message
+                                        );
+
         #endregion
 
         #region Say(Name, Message)
 
         /// <summary>
         /// A line from the environment itself, in the same shape as the rest,
-        /// for the moments before any of the four exists to say it.
+        /// for the moments before any of the five exists to say it.
         /// </summary>
         public void Say(String Name, String Message)
 
@@ -167,14 +180,14 @@ namespace cloud.charging.open.TestEnvironment
                 return;
 
             // What the libraries below write with DebugX reaches exactly one of
-            // the four logs, because DebugX is one static listener list for the
-            // whole process and four bridges would put every line into four
-            // logs. Which of the four it lands in says nothing about which of
+            // the five logs, because DebugX is one static listener list for the
+            // whole process and five bridges would put every line into five
+            // logs. Which of the five it lands in says nothing about which of
             // them was running at the time, so it is not named as that one.
             if (Tags.Contains("trace"))
                 Component = "trace";
 
-            // The console is one device and four components write to it from
+            // The console is one device and five components write to it from
             // every thread each of them has; without this the colour of one
             // entry ends up on the text of another.
             lock (padlock)
@@ -199,7 +212,7 @@ namespace cloud.charging.open.TestEnvironment
                     Console.Write(' ');
 
                     // The component in a colour of its own, which is the one
-                    // thing a console showing four programs at once has to make
+                    // thing a console showing five programs at once has to make
                     // easy: the eye finds the colour before it reads the name.
                     Console.ForegroundColor = ColourOfComponent(Component);
                     Console.Write(Component.PadRight(NameWidth));
@@ -232,8 +245,8 @@ namespace cloud.charging.open.TestEnvironment
 
         #region (private static) ColourOfLevel(Level) / ColourOfComponent(Name)
 
-        // The levels of all four enums are the same members in the same order,
-        // which is what makes one number out of four types work at all.
+        // The levels of all five enums are the same members in the same order,
+        // which is what makes one number out of five types work at all.
         private static ConsoleColor ColourOfLevel(Int32 Level)
 
             => Level switch {
@@ -252,6 +265,7 @@ namespace cloud.charging.open.TestEnvironment
                    "station"  => ConsoleColor.Blue,
                    "LC"       => ConsoleColor.DarkYellow,
                    "CSMS"     => ConsoleColor.DarkGreen,
+                   "EMSP"     => ConsoleColor.DarkMagenta,
                    _          => ConsoleColor.White
                };
 

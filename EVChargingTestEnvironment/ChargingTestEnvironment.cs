@@ -35,11 +35,13 @@ using StationConfig  = cloud.charging.open.ChargingStation.Configuration;
 using StationV2G     = cloud.charging.open.ChargingStation.ISO15118;
 using ControlConfig  = cloud.charging.open.LocalController.Configuration;
 using CSMSConfig     = cloud.charging.open.CSMS.Configuration;
+using EMSPConfig     = cloud.charging.open.EMSP.Configuration;
 
 using Vehicle        = cloud.charging.open.EV.EV;
 using Station        = cloud.charging.open.ChargingStation.ChargingStation;
 using Controller     = cloud.charging.open.LocalController.LocalController;
 using Management     = cloud.charging.open.CSMS.CSMS;
+using Provider       = cloud.charging.open.EMSP.EMSP;
 
 #endregion
 
@@ -47,27 +49,36 @@ namespace cloud.charging.open.TestEnvironment
 {
 
     /// <summary>
-    /// One vehicle, one charging station, one local controller and one charging
-    /// station management system, in one process, already pointed at each
-    /// other and already holding the certificates they need.
+    /// One vehicle, one charging station, one local controller, one charging
+    /// station management system and one e-mobility service provider, in one
+    /// process, already pointed at each other and already holding the
+    /// certificates they need.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Each of these four is its own repository and its own program, and each
+    /// Each of these five is its own repository and its own program, and each
     /// of them runs on its own. What none of them can do on its own is be a
     /// <em>site</em>: a vehicle needs a station to charge at, a station needs
     /// something above it to report to, and all of them need certificates that
     /// somebody has to have minted and handed out in the right directions.
-    /// That is what this class is - not a fifth component, but the wiring
-    /// between four.
+    /// That is what this class is - not a sixth component, but the wiring
+    /// between five.
+    /// </para>
+    /// <para>
+    /// The EMSP is the one of the five that nothing else here dials: it is the
+    /// other end of an OCPI roaming agreement, and there is no CPO speaking
+    /// OCPI on this bench yet. It is built and started all the same - its web
+    /// interface, its OCPI endpoints below <c>/ext</c>, its log on the same
+    /// console - so that a partner can be pointed at it, and so that the bench
+    /// shows what a site with roaming on it looks like.
     /// </para>
     /// <para>
     /// <b>The order things happen in is the whole design.</b>
     /// </para>
     /// <list type="number">
     ///   <item>The certificates, before anything else exists. They decide what the station can listen with and what the vehicle may believe.</item>
-    ///   <item>The configuration files, because every one of these four reads its own at construction and several of them open ports according to it.</item>
-    ///   <item>The four objects, from the top down: the CSMS knows nothing of what is below it, and everything below has to be told where to dial.</item>
+    ///   <item>The configuration files, because every one of these five reads its own at construction and several of them open ports according to it.</item>
+    ///   <item>The five objects, from the top down: the CSMS knows nothing of what is below it, and everything below has to be told where to dial. The EMSP stands beside the CSMS and dials nothing.</item>
     ///   <item>The certificates and logins handed out, which needs the objects (their key stores are theirs) and has to happen before they start (starting is when they dial).</item>
     ///   <item>Start, from the top down again, so that nothing dials a port that is not open yet.</item>
     /// </list>
@@ -105,7 +116,10 @@ namespace cloud.charging.open.TestEnvironment
         /// <summary>The charging station management system.</summary>
         public Management   CSMS                { get; }
 
-        /// <summary>The one console the four of them write to, each line saying which of them it came from.</summary>
+        /// <summary>The e-mobility service provider, unless it was left out.</summary>
+        public Provider?    EMSP                { get; }
+
+        /// <summary>The one console the five of them write to, each line saying which of them it came from.</summary>
         public ConsoleMux   Console             { get; }
 
         /// <summary>
@@ -148,6 +162,9 @@ namespace cloud.charging.open.TestEnvironment
 
                 yield return     ("CSMS",              CSMS.WebInterfaceURL);
 
+                if (EMSP is not null)
+                    yield return ("EMSP",              EMSP.WebInterfaceURL);
+
             }
         }
 
@@ -185,8 +202,8 @@ namespace cloud.charging.open.TestEnvironment
         /// <remarks>
         /// Only ever at a first start, and only ever here: what is kept is the
         /// hash the accounts make of it, so this is the one moment the password
-        /// exists anywhere it can be read. Where the four share one set of
-        /// accounts there is one of these rather than four - which is the point
+        /// exists anywhere it can be read. Where the five share one set of
+        /// accounts there is one of these rather than five - which is the point
         /// of sharing them.
         /// </remarks>
         public IEnumerable<(String Whose, String Password)> GeneratedPasswords()
@@ -196,7 +213,10 @@ namespace cloud.charging.open.TestEnvironment
             // accounts - which whichever of them started first made - is named
             // once and by the component that made it.
             if (CSMS.GeneratedPassword is { } csms)
-                yield return (options.Shared ? "all four" : "the CSMS", csms);
+                yield return (options.Shared ? "all five" : "the CSMS", csms);
+
+            if (EMSP?.GeneratedPassword is { } emsp)
+                yield return ("the EMSP", emsp);
 
             if (Controller?.GeneratedPassword is { } controller)
                 yield return ("the local controller", controller);
@@ -223,7 +243,8 @@ namespace cloud.charging.open.TestEnvironment
                                         Vehicle?                EV,
                                         Station                 Station,
                                         Controller?             Controller,
-                                        Management              CSMS)
+                                        Management              CSMS,
+                                        Provider?               EMSP)
         {
 
             this.options       = Options;
@@ -235,6 +256,7 @@ namespace cloud.charging.open.TestEnvironment
             this.Station       = Station;
             this.Controller    = Controller;
             this.CSMS          = CSMS;
+            this.EMSP          = EMSP;
 
         }
 
@@ -275,14 +297,17 @@ namespace cloud.charging.open.TestEnvironment
             if (!Options.NoLocalController)
                 Directory.CreateDirectory(Options.ControllerDirectory);
 
+            if (!Options.NoEMSP)
+                Directory.CreateDirectory(Options.EMSPDirectory);
+
             WriteConfigurations(Options, certificates);
 
             #endregion
 
-            #region 3) One console and one name resolver for all four
+            #region 3) One console and one name resolver for all five
 
-            // Each of the four keeps an event log of its own - four copies of
-            // the same type in four namespaces, because each of them ships as
+            // Each of the five keeps an event log of its own - five copies of
+            // the same type in five namespaces, because each of them ships as
             // a program that may not depend on the others - so there is no one
             // log to hand them. What they can share is the console, and the
             // console is the one place they have to be read together.
@@ -317,7 +342,7 @@ namespace cloud.charging.open.TestEnvironment
 
             #endregion
 
-            #region 5) The four of them, from the top down
+            #region 5) The five of them, from the top down
 
             var csms       = new Management(
 
@@ -335,19 +360,49 @@ namespace cloud.charging.open.TestEnvironment
                                                        ),
                                  Frontend:             FrontendOf(Options, "CSMS", "CSMS"),
 
-                                 // Off on all four: what each of them writes
+                                 // Off on all five: what each of them writes
                                  // reaches the console through the multiplexer
-                                 // below, which says which of the four said it.
-                                 // Four ConsoleLogs would say nothing of the
+                                 // below, which says which of the five said it.
+                                 // Five ConsoleLogs would say nothing of the
                                  // kind and interleave.
                                  LogToConsole:         false,
 
                                  // On here and on none of the others. DebugX is
                                  // one static listener list for the whole
-                                 // process, so four bridges would put every
-                                 // line the libraries below write into four
-                                 // logs and onto the console four times.
+                                 // process, so five bridges would put every
+                                 // line the libraries below write into five
+                                 // logs and onto the console five times.
                                  BridgeDebugLog:       Options.BridgeDebugLog
+
+                             );
+
+            // Beside the CSMS rather than below it: an EMSP is the other end
+            // of a roaming agreement, and nothing on this bench dials it yet.
+            // It is told nothing in WriteConfigurations for the same reason -
+            // who it is (DE-GDF unless its file says otherwise) and which OCPI
+            // versions it offers are in its own file, and its partners are in
+            // the library's own files beside it, where its web interface puts
+            // them.
+            Provider? emsp = null;
+
+            if (!Options.NoEMSP)
+                emsp       = new Provider(
+
+                                 DNSClient:            dnsClient,
+                                 HTTPServer:           sharedServer,
+                                 BasePath:             Options.Shared ? TestEnvironmentOptions.EMSPBasePath : null,
+                                 ExtAPI:               sharedExtAPI,
+                                 HTTPHostname:         Options.Address,
+                                 HTTPPort:             Options.EMSPPort,
+                                 AccountsPath:         Options.Shared
+                                                           ? Options.SharedAccountsPath
+                                                           : Path.Combine(Options.EMSPDirectory, "accounts"),
+                                 ConfigFile:           new EMSPConfig.EMSPConfigFile(
+                                                           Path.Combine(Options.EMSPDirectory, EMSPConfig.EMSPConfigFile.DefaultFileName)
+                                                       ),
+                                 Frontend:             FrontendOf(Options, "EMSP", "EMSP"),
+                                 LogToConsole:         false,
+                                 BridgeDebugLog:       false
 
                              );
 
@@ -432,11 +487,14 @@ namespace cloud.charging.open.TestEnvironment
 
             #endregion
 
-            #region 6) The four logs onto the one console
+            #region 6) The five logs onto the one console
 
-            // After all four exist, and in the order the console should show
+            // After all five exist, and in the order the console should show
             // them in when they all start at once.
             console.Attach(csms.Log,       "CSMS");
+
+            if (emsp is not null)
+                console.Attach(emsp.Log,       "EMSP");
 
             if (controller is not null)
                 console.Attach(controller.Log, "LC");
@@ -457,7 +515,8 @@ namespace cloud.charging.open.TestEnvironment
                        vehicle,
                        station,
                        controller,
-                       csms
+                       csms,
+                       emsp
                    );
 
         }
@@ -490,13 +549,20 @@ namespace cloud.charging.open.TestEnvironment
 
             if (sharedServer is not null)
             {
-                // One server for all four, so it is started here rather than
-                // four times over - Start() on each of them would take the
-                // same socket four times.
+                // One server for all five, so it is started here rather than
+                // five times over - Start() on each of them would take the
+                // same socket five times.
                 await sharedServer.Start();
             }
 
             await CSMS.Start();
+
+            // Right after the CSMS, and nothing below waits for it: nothing
+            // dials it. Second rather than first so that, where the five share
+            // their accounts, it is still the CSMS that makes them at a first
+            // start and is named for it.
+            if (EMSP is not null)
+                await EMSP.Start();
 
             if (Controller is not null)
                 await Controller.Start();
@@ -571,6 +637,9 @@ namespace cloud.charging.open.TestEnvironment
 
             await CSMS.Stop();
 
+            if (EMSP is not null)
+                await EMSP.Stop();
+
             if (sharedServer is not null)
                 await sharedServer.Stop();
 
@@ -592,7 +661,7 @@ namespace cloud.charging.open.TestEnvironment
             catch (Exception e)
             {
                 // Fully qualified: this class has a Console of its own, which
-                // is the four components' console and not the process's.
+                // is the five components' console and not the process's.
                 System.Console.Error.WriteLine($"The test environment did not stop cleanly: {e.Message}");
             }
 
@@ -605,6 +674,9 @@ namespace cloud.charging.open.TestEnvironment
                 await Controller.DisposeAsync();
 
             await CSMS.      DisposeAsync();
+
+            if (EMSP is not null)
+                await EMSP.DisposeAsync();
 
         }
 
@@ -796,7 +868,8 @@ namespace cloud.charging.open.TestEnvironment
         #region (private static) WriteConfigurations(Options, Certificates)
 
         /// <summary>
-        /// What each of the four is told in writing, before it reads it.
+        /// What each of the four that talk to each other is told in writing,
+        /// before it reads it. The EMSP is told nothing: nothing here dials it.
         /// </summary>
         /// <remarks>
         /// <para>
