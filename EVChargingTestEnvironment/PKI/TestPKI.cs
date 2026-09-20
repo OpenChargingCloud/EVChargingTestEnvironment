@@ -95,8 +95,7 @@ namespace cloud.charging.open.TestEnvironment.PKI
         /// What this file says about itself, so that a directory written by an
         /// older version is rebuilt rather than half-read.
         /// </summary>
-        public const Int32   Layout                = 1;
-
+        public const Int32   Layout                = 2;
         /// <summary>
         /// The manifest, which also carries the one password every PKCS#12 file
         /// here is protected with.
@@ -135,14 +134,34 @@ namespace cloud.charging.open.TestEnvironment.PKI
         /// own.
         /// </summary>
         public IEnumerable<String> V2GRootCertificateFiles
+            => RootCertificateFiles("01_v2g_root_ca");
+
+        /// <summary>
+        /// The two MO roots, one per hierarchy: what a contract certificate
+        /// must chain to, and nothing else vouches for one.
+        /// </summary>
+        public IEnumerable<String> MORootCertificateFiles
+            => RootCertificateFiles("01_mo_root_ca");
+
+        /// <summary>
+        /// The two OEM roots, one per hierarchy: what an OEM provisioning
+        /// certificate - and the vehicle's TLS certificate - must chain to.
+        /// </summary>
+        public IEnumerable<String> OEMRootCertificateFiles
+            => RootCertificateFiles("01_oem_root_ca");
+
+        /// <summary>
+        /// The certificate files of one kind of root, across both hierarchies:
+        /// one certificate per file, as the vehicle's store takes them.
+        /// </summary>
+        private IEnumerable<String> RootCertificateFiles(String RootDirectoryName)
             => System.IO.Directory.Exists(Path.Combine(Directory, "v2g"))
                    ? System.IO.Directory.GetDirectories(Path.Combine(Directory, "v2g"), "strict_*")
-                                        .Select  (profile => Path.Combine(profile, "01_v2g_root_ca"))
+                                        .Select  (profile => Path.Combine(profile, RootDirectoryName))
                                         .Where   (System.IO.Directory.Exists)
                                         .SelectMany(rootDirectory => System.IO.Directory.GetFiles(rootDirectory, "*.cert.pem"))
                                         .OrderBy (file => file)
                    : [];
-
         /// <summary>The OCPP root, for the trust store of everything that accepts a client certificate.</summary>
         public String          OCPPRootTrustFile      => Path.Combine(Directory, "ocpp", "ocpp_root_trust.pem");
 
@@ -261,6 +280,12 @@ namespace cloud.charging.open.TestEnvironment.PKI
 
             #region The two V2G hierarchies
 
+            // Three roots per hierarchy rather than one: a V2G root above
+            // the station's chain, an MO root above the contract, an OEM root
+            // above the provisioning and vehicle certificates. The vehicle
+            // keeps its trust anchors apart by what they vouch for, and one
+            // root above everything would leave two of its three slots empty
+            // - or, worse, let the one root vouch for all three.
             var iso2   = V2GHierarchy.Build(
                              V2GAlgorithm.EcdsaP256,
                              random,
@@ -268,10 +293,10 @@ namespace cloud.charging.open.TestEnvironment.PKI
                              V2GProfileOptions:  new V2GProfileOptions(
                                                      V2GProfileFlavor.Strict15118_2,
                                                      V2GAlgorithm.EcdsaP256,
-                                                     V2GPolicySet.None
+                                                     V2GPolicySet.None,
+                                                     V2GRootLayout.SeparateRoots
                                                  )
                          );
-
             var iso20  = V2GHierarchy.Build(
                              V2GAlgorithm.EcdsaP521,
                              random,
@@ -279,10 +304,10 @@ namespace cloud.charging.open.TestEnvironment.PKI
                              V2GProfileOptions:  new V2GProfileOptions(
                                                      V2GProfileFlavor.Strict15118_20,
                                                      V2GAlgorithm.EcdsaP521,
-                                                     V2GPolicySet.None
+                                                     V2GPolicySet.None,
+                                                     V2GRootLayout.SeparateRoots
                                                  )
                          );
-
             var v2gDirectory = Path.Combine(directory, "v2g");
 
             V2GIO.WriteHierarchy(iso2,  v2gDirectory);
@@ -462,6 +487,7 @@ namespace cloud.charging.open.TestEnvironment.PKI
 
             yield return $"directory      {Directory}";
             yield return $"V2G roots      {V2GRootTrustFile}";
+            yield return $"MO/OEM roots   {Path.Combine(Directory, "v2g", "strict_*", "01_mo_root_ca")} and 01_oem_root_ca - one per hierarchy, the vehicle's moRoot and oemRoot";
             yield return $"OCPP root      {OCPPRootTrustFile}";
             yield return $"passwords      {Path.Combine(Directory, ManifestFileName)} (the one password every .pfx here has)";
 

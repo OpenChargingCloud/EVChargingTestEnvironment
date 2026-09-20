@@ -171,13 +171,15 @@ namespace cloud.charging.open.TestEnvironment
             // the head of a fingerprint: the same bundle imported at every
             // start is the same entry every time.
             //
-            // Both V2G roots are believed, because this environment presents
-            // material from both hierarchies - the -2 one between its own two
-            // ends, the -20 one when the vehicle is pointed at the reference
-            // station. Nothing is imported as an MO or OEM root: each
-            // hierarchy has one root above everything, and one certificate
-            // has one purpose in that store. The vehicle says at a session
-            // that it holds no root of those kinds, and proceeds.
+            // The roots of both hierarchies, each in the slot for what it
+            // vouches for: the V2G roots for a station's chain, the MO roots
+            // for a contract, the OEM roots for a provisioning certificate.
+            // Both hierarchies, because this environment presents material
+            // from both - the -2 one between its own two ends, the -20 one
+            // when the vehicle is pointed at the reference station. Three
+            // roots per hierarchy is why the PKI is built with separate roots
+            // at all: one certificate has one purpose in that store, and one
+            // root above everything could fill only one of the three slots.
             if (EV is { } vehicle)
                 HandOutVehicleCertificates(vehicle);
 
@@ -247,24 +249,64 @@ namespace cloud.charging.open.TestEnvironment
         private void HandOutVehicleCertificates(Vehicle Vehicle)
         {
 
+            // Everything handed out at this start, by handle, so that what was
+            // not can be told apart afterwards.
+            var handedOut = new HashSet<String>();
+
+            String Take(String File, CertificateKind Kind, String? Password, String What)
+            {
+                var id = Import(Vehicle, File, Kind, Password, What);
+                handedOut.Add(id);
+                return id;
+            }
+
             foreach (var root in Certificates.V2GRootCertificateFiles)
-                Import(Vehicle, root, CertificateKind.V2GRoot, null, "V2G root");
+                Take(root, CertificateKind.V2GRoot, null, "V2G root");
+
+            foreach (var root in Certificates.MORootCertificateFiles)
+                Take(root, CertificateKind.MORoot,  null, "MO root");
+
+            foreach (var root in Certificates.OEMRootCertificateFiles)
+                Take(root, CertificateKind.OEMRoot, null, "OEM root");
 
             var chosen = new JObject(
-                             new JProperty("vehicleCertificate",   Import(Vehicle, Certificates.VehicleBundleFile,  CertificateKind.Vehicle,            Certificates.Password, "Vehicle certificate")),
-                             new JProperty("contractCertificate",  Import(Vehicle, Certificates.ContractBundleFile, CertificateKind.Contract,           Certificates.Password, "contract certificate")),
-                             new JProperty("oemCertificate",       Import(Vehicle, Certificates.OEMBundleFile,      CertificateKind.OEMProvisioning,    Certificates.Password, "OEM provisioning certificate")),
-                             new JProperty("tariffCertificate",    Import(Vehicle, Certificates.TariffBundleFile,   CertificateKind.TariffVerification, Certificates.Password, "tariff verification key"))
+                             new JProperty("vehicleCertificate",   Take(Certificates.VehicleBundleFile,  CertificateKind.Vehicle,            Certificates.Password, "Vehicle certificate")),
+                             new JProperty("contractCertificate",  Take(Certificates.ContractBundleFile, CertificateKind.Contract,           Certificates.Password, "contract certificate")),
+                             new JProperty("oemCertificate",       Take(Certificates.OEMBundleFile,      CertificateKind.OEMProvisioning,    Certificates.Password, "OEM provisioning certificate")),
+                             new JProperty("tariffCertificate",    Take(Certificates.TariffBundleFile,   CertificateKind.TariffVerification, Certificates.Password, "tariff verification key"))
                          );
 
             if (!Vehicle.TryUpdateSessionConfiguration(chosen, out var error))
                 throw new InvalidOperationException($"The vehicle could not be told which certificates to use: {error}");
 
+            // A PKI built anew makes everything the store held from the old
+            // one stale: roots with the same names and different keys - the
+            // evil twins the PKI builder writes on purpose, and the one thing
+            // a trust store must not hold by accident - and credentials the
+            // session no longer names. They go, after the session has been
+            // pointed at their successors, so that what the vehicle believes
+            // is exactly what this environment just handed out. At a start
+            // that reuses the PKI nothing is touched: what somebody imported
+            // by hand is theirs.
+            if (Certificates.WasBuilt)
+            {
+
+                var stale = Vehicle.Certificates.Entries.Where(entry => !handedOut.Contains(entry.Id)).ToList();
+
+                foreach (var entry in stale)
+                    if (!Vehicle.Certificates.Remove(entry.Id, out var why))
+                        Console.Say("env", $"Vehicle: '{entry.Label}' from an earlier PKI could not be removed from its store: {why}");
+
+                if (stale.Count > 0)
+                    Console.Say("env", $"Vehicle: {stale.Count} certificate(s) from the PKI that was moved aside were removed from its store, so that nothing but this PKI is believed.");
+
+            }
+
             Console.Say(
                 "env",
                 $"Vehicle: {Vehicle.Certificates.Entries.Count} certificates in its store at {Vehicle.Certificates.Directory} - " +
-                 "both V2G roots, and the Vehicle, contract, OEM and tariff certificates of this PKI, chosen by handle. " +
-                 "No MO or OEM root: each hierarchy here has one root above everything, and a certificate has one purpose there."
+                 "the V2G, MO and OEM roots of both hierarchies, each in the slot for what it vouches for, and the " +
+                 "Vehicle, contract, OEM and tariff certificates of this PKI, chosen by handle."
             );
 
         }

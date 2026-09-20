@@ -174,7 +174,7 @@ after that. `--fresh-pki` builds it again — which invalidates every OCPP
 certificate signed for an earlier start, so it moves the old hierarchy aside
 rather than deleting it.
 
-**Three hierarchies, and three separate roots.**
+**Three hierarchies, and seven roots.**
 
 | | |
 |---|---|
@@ -182,6 +182,13 @@ rather than deleting it.
 | `v2g/strict_15118_20_ecdsa_p521/` | ISO 15118-20 profile, ECDSA P-521. The -20-faithful material |
 | `ocpp/` | A root of its own above the charging cable |
 
+Each V2G hierarchy has **three roots rather than one**: a V2G Root CA above the
+station's chain and the CPS, an MO Root CA above the contract, and an OEM Root
+CA above the provisioning certificate and the vehicle's TLS certificate — the
+three anchors ISO 15118-20 names. The vehicle keeps its trust anchors apart by
+what they vouch for, one slot each, and a hierarchy with one root above
+everything could fill only one of the three; worse, it would let the root that
+vouches for stations vouch for contracts.
 The **-2 hierarchy is P-256 because the station's V2G endpoint is .NET's own TLS
 stack**, and .NET on Windows and macOS will not carry the -20 curve at all — a
 P-521 station certificate there is a station nothing can connect to.
@@ -204,7 +211,7 @@ What each program is handed:
 | | |
 |---|---|
 | station, V2G endpoint | the SECC leaf, its CPO Sub-CAs, and its private key |
-| vehicle | Vehicle, contract, OEM and tariff certificates and both V2G roots, imported into its own certificate store at every start and named in its session by the handles they became |
+| vehicle | Vehicle, contract, OEM and tariff certificates, and the V2G, MO and OEM roots of both hierarchies, imported into its own certificate store at every start — the roots each in the slot for what it vouches for, the certificates named in its session by the handles they became |
 | CSMS, local controller | a server certificate signed against their own signing request, and the OCPP root as an accepted chain |
 | station, OCPP | a client certificate signed against its own signing request |
 
