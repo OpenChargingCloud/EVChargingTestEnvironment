@@ -1,39 +1,51 @@
 # EVChargingTestEnvironment
 
-A vehicle, a charging station, a local controller and a CSMS, in one process,
-already pointed at each other and already holding the certificates they need —
-until Ctrl+C.
+A vehicle, a charging station, a local controller, a CSMS and an EMSP, in one
+process, already pointed at each other and already holding the certificates
+they need — until Ctrl+C.
 
 ```
   EV  ──ISO 15118──▶  ChargingStation  ──OCPP 2.1──▶  LocalController  ──OCPP 2.1──▶  CSMS
       SLAC, SDP, TLS                   ws:// or wss://                 ws:// or wss://
       or, with --mcs, a 10BASE-T1S bus
       with the coupler's sensors on it
+
+  EMSP  ◀──OCPI──  nobody here yet: the CSMS does not speak OCPI, so the EMSP
+                   waits for a CPO to be pointed at it
 ```
 
-Each of those four is its own repository and its own program, and each runs on
+Each of those five is its own repository and its own program, and each runs on
 its own:
 [EVCLI](https://github.com/OpenChargingCloud/EVCLI),
 [ChargingStationCLI](https://github.com/OpenChargingCloud/ChargingStationCLI),
 [LocalControllerCLI](https://github.com/OpenChargingCloud/LocalControllerCLI),
-[CSMSCLI](https://github.com/OpenChargingCloud/CSMSCLI). What none of them can
-do on its own is be a *site*. A vehicle needs a station to charge at, a station
-needs something above it to report to, and all four need certificates somebody
-has to have minted and handed out in the right directions. Separately that is
-an afternoon of copying files between four directories, and every step of it is
-a place to put the wrong one.
+[CSMSCLI](https://github.com/OpenChargingCloud/CSMSCLI) — and
+[EMSP](https://github.com/OpenChargingCloud/EMSP), which has no command-line
+program of its own yet. What none of them can do on its own is be a *site*. A
+vehicle needs a station to charge at, a station needs something above it to
+report to, and all of them need certificates somebody has to have minted and
+handed out in the right directions. Separately that is an afternoon of copying
+files between five directories, and every step of it is a place to put the
+wrong one.
 
-This repository is that wiring, and nothing else. It adds no fifth component.
+The EMSP is the one of the five that nothing else here dials: it is the other
+end of an OCPI roaming agreement, and the CSMS does not speak OCPI yet. It runs
+all the same — its web interface, its OCPI endpoints below `/ext`, its log on
+the same console — so that a CPO can be pointed at it. `--no-emsp` leaves it
+out.
+
+This repository is that wiring, and nothing else. It adds no sixth component.
 
 
 ### What happens at a start
 
 1. **The certificates, before anything else exists.** Three hierarchies — see
    below — built into `data/pki/` and kept there between starts.
-2. **The configuration files**, because every one of these four reads its own
+2. **The configuration files**, because every one of these five reads its own
    while it is being built and several of them open ports according to it.
-3. **The four objects**, from the top down: the CSMS knows nothing of what is
-   below it, and everything below has to be told where to dial.
+3. **The five objects**, from the top down: the CSMS knows nothing of what is
+   below it, and everything below has to be told where to dial. The EMSP
+   stands beside the CSMS and is told nothing: nothing here dials it.
 4. **The certificates and logins handed out** — through the same methods each
    component's web interface calls, so everything handed out here shows up in
    the browser where it would have been put by hand.
@@ -95,8 +107,11 @@ dotnet run --project EVChargingTestEnvironment
 ```
 
 The build needs the .NET 10 SDK and Node.js; `dotnet build
--p:SkipFrontendBuild=true` leaves the four npm steps out and reuses whatever is
-in each `Frontend/dist`.
+-p:SkipFrontendBuild=true` leaves the five npm steps out and reuses whatever is
+in each `Frontend/dist`. On a machine with no Node at all there is nothing to
+reuse, and that is a warning rather than an error: each component is then built
+without its web interface, answers on its JSON API, serves a browser nothing,
+and says so at every start.
 
 ```
   vehicle           http://127.0.0.1:2347/
@@ -104,6 +119,8 @@ in each `Frontend/dist`.
   display           http://127.0.0.1:2349/
   local controller  http://127.0.0.1:2350/
   CSMS              http://127.0.0.1:2351/
+  EMSP              http://127.0.0.1:2355/
+  OCPI versions     http://127.0.0.1:2355/ext/versions
 ```
 
 The first start makes up one account per component, `root`, and prints each
@@ -112,7 +129,7 @@ password once. `--help` lists the rest.
 
 ### Ports
 
-Eight, counted off `--base-port` so that a second environment on one machine is
+Nine, counted off `--base-port` so that a second environment on one machine is
 one switch away:
 
 | | |
@@ -125,35 +142,41 @@ one switch away:
 | `n+5` | the CSMS's OCPP port, where stations and controllers dial it |
 | `n+6` | the local controller's OCPP port |
 | `n+7` | the coupler's 10BASE-T1S bus under `--mcs` — a UDP multicast group, `239.151.18.1`, not a listener |
+| `n+8` | the EMSP's web interface, with its OCPI endpoints below `/ext` on the same port |
 
 `n` is 2347 unless `--base-port` says otherwise, which is the vehicle's own port
-when it runs alone. Nothing is listened on but the loopback address until
-`--any`; the multicast group is the one exception, because a bus that only one
-process can hear is not a bus.
+when it runs alone; `n+8` is then 2355, the EMSP's own port when it runs alone,
+and it comes after the bus rather than before it so that the seven ports the
+four original components take keep the numbers they always had. Nothing is
+listened on but the loopback address until `--any`; the multicast group is the
+one exception, because a bus that only one process can hear is not a bus.
 
 
-### One server instead of seven ports: `--shared`
+### One server instead of eight ports: `--shared`
 
 ```
 ./run.sh --shared
 ```
 
-One HTTP server on one port, the four web interfaces told apart by the first
-path segment, and **one sign-in for all four**:
+One HTTP server on one port, the five web interfaces told apart by the first
+path segment, and **one sign-in for all five**:
 
 ```
   http://127.0.0.1:2347/EV/...
   http://127.0.0.1:2347/ChargingStation/...
   http://127.0.0.1:2347/LocalController/...
   http://127.0.0.1:2347/CSMS/...
+  http://127.0.0.1:2347/EMSP/...
   http://127.0.0.1:2347/ext/login          ← one door
+  http://127.0.0.1:2347/ext/versions       ← and the EMSP's OCPI, on the same API
 ```
 
-The single sign-on is not a mechanism bolted beside the four; it is a
+The single sign-on is not a mechanism bolted beside the five; it is a
 consequence of how they already work. Each of them carries its roles as groups
 in Hermod's `HTTPExtAPI` and asks, on every request, whether the account is in
-the group — and the names overlap on purpose: all four have `systemadmin` and
-`viewer`, three of them have `cpo`. So one `HTTPExtAPI` handed to all four,
+the group — and the names overlap on purpose: all five have `systemadmin` and
+`viewer`, three of them have `cpo` and the EMSP `emsp`. So one `HTTPExtAPI`
+handed to all five,
 with one set of accounts behind it, makes an account in `systemadmin` an
 administrator of every one of them at once, with each component still deciding
 for itself what that permits.
@@ -162,7 +185,7 @@ The two OCPP ports stay where they were: they serve a different network, present
 different certificates and let in different callers, and one port would make one
 set of rules out of two.
 
-Own ports is the default, and deliberately so: four servers and four sets of
+Own ports is the default, and deliberately so: five servers and five sets of
 accounts is what each of these programs does when it is started alone, so it is
 the arrangement a bug found here is also a bug in.
 
@@ -373,12 +396,12 @@ exclude each other: the bus is the station's, and without a station there is
 nobody to coordinate it.
 
 
-### What each of the four *is*
+### What each of the five *is*
 
 Said in that component's own `configuration.json` below `data/`, and on its own
 Configuration page — exactly as when it runs alone. The switches here are about
-the *site*: how many of the four there are, which ports they take, where their
-certificates come from. Four programs' worth of switches on one command line
+the *site*: how many of the five there are, which ports they take, where their
+certificates come from. Five programs' worth of switches on one command line
 would be several hundred of them, and every one would be a second place for a
 setting to disagree with the first.
 
@@ -388,10 +411,11 @@ data/
 ├── ChargingStation/     configuration.json, accounts/, ocpp-client-keys/, …
 ├── LocalController/     configuration.json, accounts/, ocpp-server-keys/, …
 ├── CSMS/                configuration.json, accounts/, ocpp-server-keys/, …
+├── EMSP/                configuration.json, accounts/, ocpi/
 └── pki/                 v2g/, ocpp/, pki.json
 ```
 
-One directory each, because all four call their configuration file
+One directory each, because all five call their configuration file
 `configuration.json` and every other file each of them keeps lives beside that
 one. `--shared` puts the accounts in `data/accounts/` instead, once.
 
@@ -401,13 +425,14 @@ one. `--shared` puts the accounts in `data/accounts/` instead, once.
 | | |
 |---|---|
 | `EVChargingTestEnvironment/Program.cs` | the command line, and what the console says at a start |
-| `EVChargingTestEnvironment/ChargingTestEnvironment.cs` | the four built, wired and started |
+| `EVChargingTestEnvironment/ChargingTestEnvironment.cs` | the five built, wired and started |
 | `EVChargingTestEnvironment/ChargingTestEnvironment.Certificates.cs` | who is given what, and who may sign in where |
 | `EVChargingTestEnvironment/PKI/` | the hierarchies, the PKCS#12 bundles, the OCPP certificate authority |
 | `EVChargingTestEnvironment/SharedAccounts.cs` | the one `HTTPExtAPI` behind `--shared` |
-| `EVChargingTestEnvironment/ConsoleMux.cs` | four event logs on one console, each line saying who said it |
+| `EVChargingTestEnvironment/ConsoleMux.cs` | five event logs on one console, each line saying who said it |
 | `tools/build-webassets.sh` | the generated CSS the OCPP projects embed |
-| `libs/EV`, `libs/ChargingStation`, `libs/LocalController`, `libs/CSMS` | the four components themselves |
+| `libs/EV`, `libs/ChargingStation`, `libs/LocalController`, `libs/CSMS`, `libs/EMSP` | the five components themselves |
+| `libs/WWCP_OCPI` | the OCPI library the EMSP is built on: the versions and credentials endpoints, the EMSP modules, the remote parties |
 | `libs/WWCP_ISO15118/WWCP_ISO15118_T1S` | the 10BASE-T1S bus under `--mcs`: PLCA, the sensors in the pins, the thermal monitor |
 
 
