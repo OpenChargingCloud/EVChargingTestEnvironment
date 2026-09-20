@@ -782,18 +782,10 @@ namespace cloud.charging.open.TestEnvironment
                                                      ? StationV2G.SlacTransportKind.None
                                                      : StationV2G.SlacTransportKind.Auto,
 
-                       // The bus below a megawatt coupler, where there is one.
-                       // Half a second between cycles: every pin asked twice a
-                       // second, which is a log somebody can read and a
-                       // reaction time no thermistor can beat.
-                       T1S                     = Options.MCS
-                                                     ? new StationV2G.T1SOptions(
-                                                           Transport:  T1STransportKind.UDP,
-                                                           Group:      Options.T1SBus,
-                                                           Name:       "EVSE",
-                                                           CycleGap:   TimeSpan.FromMilliseconds(500)
-                                                       )
-                                                     : null
+                       // No T1S here: the bus is in the station's own
+                       // configuration file, which WriteConfigurations wrote
+                       // before this station was built and which it reads as
+                       // it is constructed.
 
                    };
 
@@ -909,14 +901,31 @@ namespace cloud.charging.open.TestEnvironment
                                   Path.Combine(Options.StationDirectory, StationConfig.StationConfigFile.DefaultFileName)
                               );
 
+            var v2g = new JObject(
+                          new JProperty("enabled",      !Options.NoV2G),
+                          new JProperty("sdp",          !Options.NoV2G),
+                          new JProperty("loopback",     true),
+                          new JProperty("interface",    Options.InterfaceName),
+
+                          // The coupler's bus, written here rather than handed
+                          // to the constructor, because this is where every
+                          // other thing the station is gets said - and because
+                          // a bus in the file is one somebody can see and
+                          // change on the Configuration page afterwards.
+                          //
+                          // Half a second between cycles: every pin asked twice
+                          // a second, which is a log somebody can read and a
+                          // reaction time no thermistor can beat.
+                          new JProperty("t1sTransport", Options.MCS ? "udp" : "none"),
+                          new JProperty("t1sCycleMs",   500)
+                      );
+
+            if (Options.MCS)
+                v2g["t1sBus"] = Options.T1SBus.ToString();
+
             if (!stationFile.TryMergeSection(
                      StationConfig.V2GConfiguration.SectionName,
-                     new JObject(
-                         new JProperty("enabled",   !Options.NoV2G),
-                         new JProperty("sdp",       !Options.NoV2G),
-                         new JProperty("loopback",  true),
-                         new JProperty("interface", Options.InterfaceName)
-                     ),
+                     v2g,
                      out var v2gError))
             {
                 throw new InvalidOperationException($"The charging station could not be told what to offer a vehicle: {v2gError}");

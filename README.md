@@ -357,7 +357,14 @@ AF_PACKET where there is one — Linux, CAP_NET_RAW — and declines everywhere
 else, because the emulated medium is never chosen by itself. The same four are
 on the vehicle's **Charging** page and, in `EVCLI`, `--t1s-transport`,
 `--t1s-bus`, `--t1s-interface`, `--t1s-weight` and `--t1s` to join once and
-say what came of it. The station takes the same choice in its `V2GOptions.T1S`.
+say what came of it.
+
+The station's side is in the `v2g` section of its own file, with the same first
+three fields and three of its own: `t1sName`, `t1sCycleMs`, and the pair
+`t1sWarningC`/`t1sOverloadC`. `--mcs` writes them there rather than handing them
+to the station in the process, so the bus is something to see and change on the
+station's **V2G** page afterwards - where the coupler's pins and their
+temperatures are, cycle by cycle.
 
 The library behind it, what in it is the standard and what is the emulation, and
 how a real 10BASE-T1S adapter plugs in, is in
