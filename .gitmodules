@@ -43,3 +43,9 @@
 [submodule "libs/WWCP_OCPI"]
 	path = libs/WWCP_OCPI
 	url = https://github.com/OpenChargingCloud/WWCP_OCPI.git
+[submodule "libs/Gateway"]
+	path = libs/Gateway
+	url = https://github.com/OpenChargingCloud/Gateway.git
+[submodule "libs/Hub"]
+        path = libs/Hub
+        url = https://github.com/OpenChargingCloud/RoamingHub.git
