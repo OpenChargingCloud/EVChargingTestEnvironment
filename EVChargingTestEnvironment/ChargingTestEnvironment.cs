@@ -578,6 +578,12 @@ namespace cloud.charging.open.TestEnvironment
             if (EV is not null)
                 await EV.Start();
 
+            // After everything is listening, because a registration is HTTP in
+            // both directions: the operator fetches the provider's versions and
+            // POSTs its credentials, and the provider calls back to the URL in
+            // them before it answers.
+            await PeerTheOperatorWithTheProvider();
+
             #endregion
 
             #region How far a session can get here, said once

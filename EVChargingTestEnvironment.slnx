@@ -70,4 +70,5 @@
     <Project Path="libs/Urdr/UrdrTests/UrdrTests.csproj" />
   </Folder>
   <Project Path="EVChargingTestEnvironment/EVChargingTestEnvironment.csproj" />
+  <Project Path="EVChargingTestEnvironmentTests/EVChargingTestEnvironmentTests.csproj" />
 </Solution>

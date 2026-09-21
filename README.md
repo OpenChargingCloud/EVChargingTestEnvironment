@@ -10,8 +10,9 @@ they need — until Ctrl+C.
       or, with --mcs, a 10BASE-T1S bus
       with the coupler's sensors on it
 
-  EMSP  ◀──OCPI──  nobody here yet: the CSMS does not speak OCPI, so the EMSP
-                   waits for a CPO to be pointed at it
+  CSMS  ◀──OCPI 2.2.1──▶  EMSP
+        the CSMS is a charge point operator beside being a CSMS; the two are
+        peered at the start, the operator walking over
 ```
 
 Each of those five is its own repository and its own program, and each runs on
@@ -28,11 +29,14 @@ handed out in the right directions. Separately that is an afternoon of copying
 files between five directories, and every step of it is a place to put the
 wrong one.
 
-The EMSP is the one of the five that nothing else here dials: it is the other
-end of an OCPI roaming agreement, and the CSMS does not speak OCPI yet. It runs
-all the same — its web interface, its OCPI endpoints below `/ext`, its log on
-the same console — so that a CPO can be pointed at it. `--no-emsp` leaves it
-out.
+The EMSP is the other end of an OCPI roaming agreement, and the CSMS is the
+near end: beside being the thing the stations dial, it is a charge point
+operator. At the start — after everything is listening, because a registration
+is HTTP in both directions — the operator walks over: it fetches the provider's
+versions, POSTs its credentials, and the provider calls back before it answers.
+Afterwards each end holds a token of the other's and both call the peering
+registered, which is what the *Roaming partners* page of either shows.
+`--no-emsp` leaves the provider out, and with it the peering.
 
 This repository is that wiring, and nothing else. It adds no sixth component.
 
@@ -410,7 +414,7 @@ data/
 ├── EV/                  configuration.json, accounts/
 ├── ChargingStation/     configuration.json, accounts/, ocpp-client-keys/, …
 ├── LocalController/     configuration.json, accounts/, ocpp-server-keys/, …
-├── CSMS/                configuration.json, accounts/, ocpp-server-keys/, …
+├── CSMS/                configuration.json, accounts/, ocpp-server-keys/, ocpi/, …
 ├── EMSP/                configuration.json, accounts/, ocpi/
 └── pki/                 v2g/, ocpp/, pki.json
 ```
@@ -432,7 +436,8 @@ one. `--shared` puts the accounts in `data/accounts/` instead, once.
 | `EVChargingTestEnvironment/ConsoleMux.cs` | five event logs on one console, each line saying who said it |
 | `tools/build-webassets.sh` | the generated CSS the OCPP projects embed |
 | `libs/EV`, `libs/ChargingStation`, `libs/LocalController`, `libs/CSMS`, `libs/EMSP` | the five components themselves |
-| `libs/WWCP_OCPI` | the OCPI library the EMSP is built on: the versions and credentials endpoints, the EMSP modules, the remote parties |
+| `EVChargingTestEnvironment/ChargingTestEnvironment.Roaming.cs` | the OCPI peering between the CSMS and the EMSP |
+| `libs/WWCP_OCPI` | the OCPI library both ends are built on: the versions and credentials endpoints, the CPO and EMSP modules, the remote parties |
 | `libs/WWCP_ISO15118/WWCP_ISO15118_T1S` | the 10BASE-T1S bus under `--mcs`: PLCA, the sensors in the pins, the thermal monitor |
 
 
@@ -444,7 +449,14 @@ dotnet test EVChargingTestEnvironment.slnx
 
 Each component's own suite starts real components and talks to them over HTTP
 the way a browser does, and the 10BASE-T1S suite runs whole buses over real
-multicast sockets. There is nothing here that tests the wiring itself yet.
+multicast sockets.
+
+`EVChargingTestEnvironmentTests/` is this repository's own, and it holds what
+no single-component repository can hold: two of the components at once, on
+ports of their own, talking to each other. The OCPI peering between the CSMS
+and the EMSP is there, started from either end — the CSMS repository has no
+EMSP beside it and can only test against a stub, the EMSP repository has no
+CSMS, and a stub agrees with whatever it is sent.
 
 
 ### Your participation
