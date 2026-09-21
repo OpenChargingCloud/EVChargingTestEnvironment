@@ -46,6 +46,6 @@
 [submodule "libs/Gateway"]
 	path = libs/Gateway
 	url = https://github.com/OpenChargingCloud/Gateway.git
-[submodule "libs/Hub"]
-        path = libs/Hub
-        url = https://github.com/OpenChargingCloud/RoamingHub.git
+[submodule "libs/RoamingHub"]
+	path = libs/RoamingHub
+	url = https://github.com/OpenChargingCloud/RoamingHub.git

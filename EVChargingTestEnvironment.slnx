@@ -29,9 +29,9 @@
     <Project Path="libs/Gateway/Gateway/Gateway.csproj" Id="bfcc76cf-7e02-4770-bfde-c17ae53c5e86" />
     <Project Path="libs/Gateway/GatewayTests/GatewayTests.csproj" />
   </Folder>
-  <Folder Name="/Dependencies/Hub/">
-    <Project Path="libs/Hub/Hub/Hub.csproj" Id="e47b7b04-9479-4b33-8898-2031b6ba8e3b" />
-    <Project Path="libs/Hub/HubTests/HubTests.csproj" Id="9eda9488-80de-41eb-af89-a3a58a33b2e5" />
+  <Folder Name="/Dependencies/RoamingHub/">
+    <Project Path="libs/RoamingHub/Hub/Hub.csproj" Id="e47b7b04-9479-4b33-8898-2031b6ba8e3b" />
+    <Project Path="libs/RoamingHub/HubTests/HubTests.csproj" Id="9eda9488-80de-41eb-af89-a3a58a33b2e5" />
   </Folder>
   <Folder Name="/Dependencies/ISO15118/">
     <Project Path="libs/WWCP_ISO15118/WWCP_ISO15118_2/WWCP_ISO15118_2.csproj" />
