@@ -18,11 +18,7 @@
 
 #region Usings
 
-using EVLog       = cloud.charging.open.EV.Logging;
-using StationLog  = cloud.charging.open.ChargingStation.Logging;
-using ControlLog  = cloud.charging.open.LocalController.Logging;
-using CSMSLog     = cloud.charging.open.CSMS.Logging;
-using EMSPLog     = cloud.charging.open.EMSP.Logging;
+using cloud.charging.open.protocols.WWCP.Node.Logging;
 
 #endregion
 
@@ -35,25 +31,13 @@ namespace cloud.charging.open.TestEnvironment
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The five components each carry an event log of their own, in a namespace
-    /// of their own - five copies of the same forty lines, because each of them
-    /// is a program that ships alone and none of them may depend on another.
-    /// Five separate types, therefore, and no way to hand one log to all five.
-    /// </para>
-    /// <para>
-    /// That is not worth changing for this: what each web interface shows under
-    /// <em>Logs</em> is that component's own log, which is exactly what it
-    /// shows when the component runs alone, and the one place the five have to
-    /// be read together is the console. So they are brought together here, at
-    /// the one place where it matters, and each line is prefixed with who said
-    /// it - which five <c>ConsoleLog</c>s of their own would not do, and which
-    /// is the whole difficulty of reading five programs at once.
-    /// </para>
-    /// <para>
-    /// The five <c>Attach</c> methods below are the same method five times
-    /// because their parameters are five unrelated types with the same shape.
-    /// C# has no way to say that, and inventing an interface for it would mean
-    /// changing five repositories to add something only this one uses.
+    /// Each of the five keeps its own event log - WWCP_Node's, the same type
+    /// for all of them - and what each web interface shows under <em>Logs</em>
+    /// is that component's own log, exactly as when it runs alone. The one
+    /// place the five have to be read together is the console, so they are
+    /// brought together here, and each line is prefixed with who said it -
+    /// which five <c>ConsoleLog</c>s of their own would not do, and which is
+    /// the whole difficulty of reading five programs at once.
     /// </para>
     /// </remarks>
     public sealed class ConsoleMux
@@ -89,58 +73,12 @@ namespace cloud.charging.open.TestEnvironment
         #endregion
 
 
-        #region Attach(Log, Name) - once per component, because the types are five
+        #region Attach(Log, Name)
 
-        /// <summary>The vehicle's log.</summary>
-        public void Attach(EVLog.EventLog Log, String Name)
-
-            => Log.OnLogged += entry => Write(
-                                            Name,
-                                            (Int32) entry.Level,
-                                            entry.Timestamp,
-                                            entry.LevelName,
-                                            entry.Tags,
-                                            entry.Message
-                                        );
-
-        /// <summary>The charging station's log.</summary>
-        public void Attach(StationLog.EventLog Log, String Name)
-
-            => Log.OnLogged += entry => Write(
-                                            Name,
-                                            (Int32) entry.Level,
-                                            entry.Timestamp,
-                                            entry.LevelName,
-                                            entry.Tags,
-                                            entry.Message
-                                        );
-
-        /// <summary>The local controller's log.</summary>
-        public void Attach(ControlLog.EventLog Log, String Name)
-
-            => Log.OnLogged += entry => Write(
-                                            Name,
-                                            (Int32) entry.Level,
-                                            entry.Timestamp,
-                                            entry.LevelName,
-                                            entry.Tags,
-                                            entry.Message
-                                        );
-
-        /// <summary>The CSMS's log.</summary>
-        public void Attach(CSMSLog.EventLog Log, String Name)
-
-            => Log.OnLogged += entry => Write(
-                                            Name,
-                                            (Int32) entry.Level,
-                                            entry.Timestamp,
-                                            entry.LevelName,
-                                            entry.Tags,
-                                            entry.Message
-                                        );
-
-        /// <summary>The EMSP's log.</summary>
-        public void Attach(EMSPLog.EventLog Log, String Name)
+        /// <summary>
+        /// One component's log, its lines prefixed with the given name.
+        /// </summary>
+        public void Attach(EventLog Log, String Name)
 
             => Log.OnLogged += entry => Write(
                                             Name,
@@ -245,8 +183,6 @@ namespace cloud.charging.open.TestEnvironment
 
         #region (private static) ColourOfLevel(Level) / ColourOfComponent(Name)
 
-        // The levels of all five enums are the same members in the same order,
-        // which is what makes one number out of five types work at all.
         private static ConsoleColor ColourOfLevel(Int32 Level)
 
             => Level switch {

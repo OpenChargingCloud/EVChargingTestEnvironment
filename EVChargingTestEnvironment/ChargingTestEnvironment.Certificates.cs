@@ -22,7 +22,7 @@ using System.Security.Cryptography;
 
 using Newtonsoft.Json.Linq;
 
-using cloud.charging.open.EV.Certificates;
+using cloud.charging.open.protocols.WWCP.Node.Certificates;
 
 using Vehicle       = cloud.charging.open.EV.EV;
 using CSMSStore     = cloud.charging.open.CSMS.OCPP;

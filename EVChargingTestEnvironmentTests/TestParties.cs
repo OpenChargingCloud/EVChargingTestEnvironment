@@ -25,6 +25,8 @@ using Newtonsoft.Json.Linq;
 
 using org.GraphDefined.Vanaheimr.Hermod;
 
+using cloud.charging.open.protocols.WWCP.Node.Configuration;
+
 #endregion
 
 namespace cloud.charging.open.TestEnvironment.Tests
@@ -85,7 +87,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
             return new CSMS.CSMS(
                        HTTPPort:         IPPort.Parse(FreePort()),
                        AccountsPath:     Path.Combine(Directory, "accounts"),
-                       ConfigFile:       new CSMS.Configuration.CSMSConfigFile(configFile),
+                       ConfigFile:       new WWCPConfigFile(configFile),
                        LogToConsole:     false,
                        BridgeDebugLog:   false
                    );
@@ -127,7 +129,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
             return new EMSP.EMSP(
                        HTTPPort:         IPPort.Parse(FreePort()),
                        AccountsPath:     Path.Combine(Directory, "accounts"),
-                       ConfigFile:       new EMSP.Configuration.EMSPConfigFile(configFile),
+                       ConfigFile:       new WWCPConfigFile(configFile),
                        LogToConsole:     false,
                        BridgeDebugLog:   false
                    );

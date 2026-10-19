@@ -27,6 +27,8 @@ using org.GraphDefined.Vanaheimr.Hermod.HTTP;
 using cloud.charging.open.EV.ISO15118;
 using cloud.charging.open.TestEnvironment.PKI;
 
+using cloud.charging.open.protocols.WWCP.Node.Configuration;
+
 using cloud.charging.open.protocols.ISO15118.T1S.Nodes;
 using cloud.charging.open.protocols.ISO15118.T1S.Transport;
 
@@ -306,11 +308,9 @@ namespace cloud.charging.open.TestEnvironment
 
             #region 3) One console and one name resolver for all five
 
-            // Each of the five keeps an event log of its own - five copies of
-            // the same type in five namespaces, because each of them ships as
-            // a program that may not depend on the others - so there is no one
-            // log to hand them. What they can share is the console, and the
-            // console is the one place they have to be read together.
+            // Each of the five keeps an event log of its own, which is what its
+            // web interface shows under Logs. What they share is the console,
+            // and the console is the one place they have to be read together.
             var console    = new ConsoleMux((Int32) Options.ConsoleLogLevel);
 
             var dnsClient  = new DNSClient(SearchForIPv6DNSServers: true);
@@ -355,8 +355,8 @@ namespace cloud.charging.open.TestEnvironment
                                  AccountsPath:         Options.Shared
                                                            ? Options.SharedAccountsPath
                                                            : Path.Combine(Options.CSMSDirectory, "accounts"),
-                                 ConfigFile:           new CSMSConfig.CSMSConfigFile(
-                                                           Path.Combine(Options.CSMSDirectory, CSMSConfig.CSMSConfigFile.DefaultFileName)
+                                 ConfigFile:           new WWCPConfigFile(
+                                                           Path.Combine(Options.CSMSDirectory, WWCPConfigFile.DefaultFileName)
                                                        ),
                                  Frontend:             FrontendOf(Options, "CSMS", "CSMS"),
 
@@ -397,8 +397,8 @@ namespace cloud.charging.open.TestEnvironment
                                  AccountsPath:         Options.Shared
                                                            ? Options.SharedAccountsPath
                                                            : Path.Combine(Options.EMSPDirectory, "accounts"),
-                                 ConfigFile:           new EMSPConfig.EMSPConfigFile(
-                                                           Path.Combine(Options.EMSPDirectory, EMSPConfig.EMSPConfigFile.DefaultFileName)
+                                 ConfigFile:           new WWCPConfigFile(
+                                                           Path.Combine(Options.EMSPDirectory, WWCPConfigFile.DefaultFileName)
                                                        ),
                                  Frontend:             FrontendOf(Options, "EMSP", "EMSP"),
                                  LogToConsole:         false,
@@ -420,8 +420,8 @@ namespace cloud.charging.open.TestEnvironment
                                  AccountsPath:         Options.Shared
                                                            ? Options.SharedAccountsPath
                                                            : Path.Combine(Options.ControllerDirectory, "accounts"),
-                                 ConfigFile:           new ControlConfig.ControllerConfigFile(
-                                                           Path.Combine(Options.ControllerDirectory, ControlConfig.ControllerConfigFile.DefaultFileName)
+                                 ConfigFile:           new WWCPConfigFile(
+                                                           Path.Combine(Options.ControllerDirectory, WWCPConfigFile.DefaultFileName)
                                                        ),
                                  Frontend:             FrontendOf(Options, "LocalController", "LocalController"),
                                  LogToConsole:         false,
@@ -440,8 +440,8 @@ namespace cloud.charging.open.TestEnvironment
                                  AccountsPath:         Options.Shared
                                                            ? Options.SharedAccountsPath
                                                            : Path.Combine(Options.StationDirectory, "accounts"),
-                                 ConfigFile:           new StationConfig.StationConfigFile(
-                                                           Path.Combine(Options.StationDirectory, StationConfig.StationConfigFile.DefaultFileName)
+                                 ConfigFile:           new WWCPConfigFile(
+                                                           Path.Combine(Options.StationDirectory, WWCPConfigFile.DefaultFileName)
                                                        ),
                                  KioskPort:            Options.KioskPort,
                                  KioskHostname:        Options.Address,
@@ -466,8 +466,8 @@ namespace cloud.charging.open.TestEnvironment
                               AccountsPath:         Options.Shared
                                                         ? Options.SharedAccountsPath
                                                         : Path.Combine(Options.VehicleDirectory, "accounts"),
-                              ConfigFile:           new EVConfig.EVConfigFile(
-                                                        Path.Combine(Options.VehicleDirectory, EVConfig.EVConfigFile.DefaultFileName)
+                              ConfigFile:           new WWCPConfigFile(
+                                                        Path.Combine(Options.VehicleDirectory, WWCPConfigFile.DefaultFileName)
                                                     ),
                               DNSClient:            dnsClient,
                               Frontend:             FrontendOf(Options, "EV", "EV"),
@@ -898,8 +898,8 @@ namespace cloud.charging.open.TestEnvironment
 
             #region The CSMS: the port the stations and controllers dial
 
-            var csmsFile = new CSMSConfig.CSMSConfigFile(
-                               Path.Combine(Options.CSMSDirectory, CSMSConfig.CSMSConfigFile.DefaultFileName)
+            var csmsFile = new WWCPConfigFile(
+                               Path.Combine(Options.CSMSDirectory, WWCPConfigFile.DefaultFileName)
                            );
 
             if (!csmsFile.TryMergeSection(
@@ -931,8 +931,8 @@ namespace cloud.charging.open.TestEnvironment
             if (!Options.NoLocalController)
             {
 
-                var controllerFile = new ControlConfig.ControllerConfigFile(
-                                         Path.Combine(Options.ControllerDirectory, ControlConfig.ControllerConfigFile.DefaultFileName)
+                var controllerFile = new WWCPConfigFile(
+                                         Path.Combine(Options.ControllerDirectory, WWCPConfigFile.DefaultFileName)
                                      );
 
                 if (!controllerFile.TryMergeSection(
@@ -976,8 +976,8 @@ namespace cloud.charging.open.TestEnvironment
 
             #region The station: what it offers below the cable
 
-            var stationFile = new StationConfig.StationConfigFile(
-                                  Path.Combine(Options.StationDirectory, StationConfig.StationConfigFile.DefaultFileName)
+            var stationFile = new WWCPConfigFile(
+                                  Path.Combine(Options.StationDirectory, WWCPConfigFile.DefaultFileName)
                               );
 
             var v2g = new JObject(
@@ -1017,8 +1017,8 @@ namespace cloud.charging.open.TestEnvironment
             if (!Options.NoVehicle)
             {
 
-                var vehicleFile = new EVConfig.EVConfigFile(
-                                      Path.Combine(Options.VehicleDirectory, EVConfig.EVConfigFile.DefaultFileName)
+                var vehicleFile = new WWCPConfigFile(
+                                      Path.Combine(Options.VehicleDirectory, WWCPConfigFile.DefaultFileName)
                                   );
 
                 if (!vehicleFile.TryMergeSection(

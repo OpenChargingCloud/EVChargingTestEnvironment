@@ -436,6 +436,7 @@ one. `--shared` puts the accounts in `data/accounts/` instead, once.
 | `EVChargingTestEnvironment/ConsoleMux.cs` | five event logs on one console, each line saying who said it |
 | `tools/build-webassets.sh` | the generated CSS the OCPP projects embed |
 | `libs/EV`, `libs/ChargingStation`, `libs/LocalController`, `libs/CSMS`, `libs/EMSP` | the five components themselves |
+| `libs/WWCP_Node` | what all five are built on: the sign-in, the configuration file, the event log, the certificate store, the web interface they share |
 | `EVChargingTestEnvironment/ChargingTestEnvironment.Roaming.cs` | the OCPI peering between the CSMS and the EMSP |
 | `libs/WWCP_OCPI` | the OCPI library both ends are built on: the versions and credentials endpoints, the CPO and EMSP modules, the remote parties |
 | `libs/WWCP_ISO15118/WWCP_ISO15118_T1S` | the 10BASE-T1S bus under `--mcs`: PLCA, the sensors in the pins, the thermal monitor |

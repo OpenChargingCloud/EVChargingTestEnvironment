@@ -23,11 +23,9 @@ using org.GraphDefined.Vanaheimr.Hermod.Mail;
 
 using NullMailer     = org.GraphDefined.Vanaheimr.Hermod.SMTP.NullMailer;
 
-using EVRoles        = cloud.charging.open.EV.Web;
-using StationRoles   = cloud.charging.open.ChargingStation.Web;
-using ControlRoles   = cloud.charging.open.LocalController.Web;
-using CSMSRoles      = cloud.charging.open.CSMS.Web;
-using EMSPRoles      = cloud.charging.open.EMSP.Web;
+using cloud.charging.open.protocols.WWCP.Node.Web;
+
+using cloud.charging.open.ChargingStation.Web;
 
 #endregion
 
@@ -153,11 +151,13 @@ namespace cloud.charging.open.TestEnvironment
         public static Byte ShortestRoleName
 
             => (Byte) new[] {
-                          EVRoles.     UserRole.All.Min(role => role.Name.Length),
-                          StationRoles.UserRole.All.Min(role => role.Name.Length),
-                          ControlRoles.UserRole.All.Min(role => role.Name.Length),
-                          CSMSRoles.   UserRole.All.Min(role => role.Name.Length),
-                          EMSPRoles.   UserRole.All.Min(role => role.Name.Length)
+                          Role.SystemAdmin.Name.Length,
+                          Role.Viewer.     Name.Length,
+                          EV.             VehicleAccess.        Roles.Min(role => role.Name.Length),
+                                          StationAccess.        Roles.Min(role => role.Name.Length),
+                          LocalController.LocalControllerAccess.Roles.Min(role => role.Name.Length),
+                          CSMS.           CSMSAccess.           Roles.Min(role => role.Name.Length),
+                          EMSP.           EMSPAccess.           Roles.Min(role => role.Name.Length)
                       }.Min();
 
         #endregion

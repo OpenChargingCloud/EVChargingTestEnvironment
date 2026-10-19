@@ -30,8 +30,8 @@
     <Project Path="libs/Gateway/GatewayTests/GatewayTests.csproj" />
   </Folder>
   <Folder Name="/Dependencies/RoamingHub/">
-    <Project Path="libs/RoamingHub/Hub/Hub.csproj" Id="e47b7b04-9479-4b33-8898-2031b6ba8e3b" />
-    <Project Path="libs/RoamingHub/HubTests/HubTests.csproj" Id="9eda9488-80de-41eb-af89-a3a58a33b2e5" />
+    <Project Path="libs/RoamingHub/RoamingHub/RoamingHub.csproj" Id="e47b7b04-9479-4b33-8898-2031b6ba8e3b" />
+    <Project Path="libs/RoamingHub/RoamingHubTests/RoamingHubTests.csproj" Id="9eda9488-80de-41eb-af89-a3a58a33b2e5" />
   </Folder>
   <Folder Name="/Dependencies/ISO15118/">
     <Project Path="libs/WWCP_ISO15118/WWCP_ISO15118_2/WWCP_ISO15118_2.csproj" />
