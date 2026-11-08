@@ -9,10 +9,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
-    <PackageReference Include="NUnit" Version="4.6.1" />
-    <PackageReference Include="NUnit3TestAdapter" Version="6.3.0" />
+    <PackageReference Include="NUnit" Version="5.0.0" />
+    <PackageReference Include="NUnit3TestAdapter" Version="6.3.1" />
   </ItemGroup>
 
   <!--
@@ -25,12 +25,21 @@
     The frontends are not needed to answer an OCPI request, so nothing here
     builds them; SkipFrontendBuild reuses whatever is in dist/, and an
     assembly without a web interface still serves its JSON API.
+
+    The local controller and the charging station are here for OCPP over
+    SSH: a real station dialling a real controller, which neither of their
+    repositories can do - each has only a stub of the other. The node's test
+    kit hands out the ports, so that these tests and the components' own
+    never reach for the same one; it is on NUnit 5, and so is this project.
   -->
   <ItemGroup>
     <ProjectReference Include="..\libs\CSMS\CSMS\CSMS.csproj" />
     <ProjectReference Include="..\libs\EMSP\EMSP\EMSP.csproj" />
+    <ProjectReference Include="..\libs\LocalController\LocalController\LocalController.csproj" />
+    <ProjectReference Include="..\libs\ChargingStation\ChargingStation\ChargingStation.csproj" />
     <ProjectReference Include="..\libs\Hermod\Hermod\Hermod.csproj" />
     <ProjectReference Include="..\libs\WWCP_OCPI\WWCP_OCPI_Common\WWCP_OCPI_Common.csproj" />
+    <ProjectReference Include="..\libs\WWCP_Node\WWCP_Node_TestKit\WWCP_Node_TestKit.csproj" />
   </ItemGroup>
 
 </Project>
