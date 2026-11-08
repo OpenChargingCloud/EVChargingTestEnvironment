@@ -746,7 +746,9 @@ namespace cloud.charging.open.TestEnvironment
 
             // What the station hears from them goes to its log; what the bench
             // wants to know is said here, once.
-            if (Station.V2G is { } link)
+            // The first EVSE's link: the command line speaks of one link, and
+            // it is that one.
+            if (Station.V2GLinkOf(1) is { } link)
                 link.ThermalStateChanged += (_, change) => {
                     if (change.IsAlarm)
                         Console.Say("env", $"COUPLER ALARM: {change.Node.Name} is {change.To.ToString().ToLowerInvariant()}" +
@@ -922,6 +924,26 @@ namespace cloud.charging.open.TestEnvironment
                      out var csmsError))
             {
                 throw new InvalidOperationException($"The CSMS could not be told which port to listen on: {csmsError}");
+            }
+
+            #endregion
+
+            #region The CSMS: where it may call its roaming partner
+
+            // The EMSP is on this machine, and a CSMS calls its partners on the
+            // public internet alone unless a rule says otherwise (CSMS 5fe4e43).
+            // Without these two the operator's half of the peering - fetching
+            // the provider's versions, and the provider calling back - is
+            // refused before a socket is opened.
+            if (!Options.NoEMSP &&
+                !csmsFile.TryMergeSection(
+                     CSMSConfig.OCPIConfiguration.SectionName,
+                     new JObject(
+                         new JProperty("remoteNetworks",   new JArray("127.0.0.0/8 => ALLOW", "::1 => ALLOW"))
+                     ),
+                     out var ocpiError))
+            {
+                throw new InvalidOperationException($"The CSMS could not be told where its roaming partner is: {ocpiError}");
             }
 
             #endregion

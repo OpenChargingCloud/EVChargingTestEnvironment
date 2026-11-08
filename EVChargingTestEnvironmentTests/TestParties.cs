@@ -69,17 +69,19 @@ namespace cloud.charging.open.TestEnvironment.Tests
             File.WriteAllText(
                 configFile,
                 new JObject(
-                    new JProperty("nts",         new JObject(
-                        new JProperty("enabled",      false)
-                    )),
+                    new JProperty("nts",         NoTimeServers),
                     new JProperty("ocppServer",  new JObject(
                         new JProperty("enabled",      false)
                     )),
                     new JProperty("ocpi",        new JObject(
-                        new JProperty("countryCode",  CountryCode),
-                        new JProperty("partyId",      PartyId),
-                        new JProperty("name",         Name),
-                        new JProperty("versions",     new JArray("2.2.1"))
+                        new JProperty("countryCode",     CountryCode),
+                        new JProperty("partyId",         PartyId),
+                        new JProperty("name",            Name),
+                        new JProperty("versions",        new JArray("2.2.1")),
+
+                        // Its partner is on this machine, which a CSMS does
+                        // not call unless told so (CSMS 5fe4e43).
+                        new JProperty("remoteNetworks",  new JArray("127.0.0.0/8 => ALLOW", "::1 => ALLOW"))
                     ))
                 ).ToString()
             );
@@ -114,9 +116,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
             File.WriteAllText(
                 configFile,
                 new JObject(
-                    new JProperty("nts",   new JObject(
-                        new JProperty("enabled",      false)
-                    )),
+                    new JProperty("nts",   NoTimeServers),
                     new JProperty("ocpi",  new JObject(
                         new JProperty("countryCode",  CountryCode),
                         new JProperty("partyId",      PartyId),
@@ -135,6 +135,29 @@ namespace cloud.charging.open.TestEnvironment.Tests
                    );
 
         }
+
+        #endregion
+
+        #region NoTimeServers
+
+        /// <summary>
+        /// The "nts" section of a node that asks no time server: the legal
+        /// group switched off, which is where a node keeps its time servers.
+        /// </summary>
+        /// <remarks>
+        /// Switched off in the file because it is read at construction, and it
+        /// is Start() that would otherwise put a timer on the network. A test
+        /// run has no business asking a public time server anything.
+        /// </remarks>
+        public static JObject NoTimeServers
+
+            => new (
+                   new JProperty("groups", new JObject(
+                       new JProperty("legal", new JObject(
+                           new JProperty("enabled", false)
+                       ))
+                   ))
+               );
 
         #endregion
 
