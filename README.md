@@ -469,7 +469,10 @@ names another station, no HELLO at all, a shell or SFTP or a forwarded port, an
 account without the right, a station an access rule shuts out, a key taken away
 while its session runs, and a frame longer than the controller takes. Where the
 station cannot be made to misbehave, a plain SSH client signed in with a
-station's key stands in for it, against the same real controller.
+station's key stands in for it, against the same real controller. And the whole
+chain once more, with a CSMS above the controller: what a station sends its
+CSMS is forwarded up, and the answer finds its way back down — over SSH and over
+a WebSocket.
 
 
 ### Your participation

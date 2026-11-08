@@ -78,11 +78,11 @@ namespace cloud.charging.open.TestEnvironment.Tests
     /// The controller answers what its stations send to their CSMS - the
     /// BootNotification, the heartbeat, a binary data transfer - itself: its
     /// OCPP node takes "CSMS" as one of its own names, which is what the
-    /// node's BootNotification handler was written for. A controller that
-    /// forwards them instead loses the answers on the way back down
-    /// (<see cref="AStationsRequest_ThroughTheController_IsAnsweredByTheCSMS"/>),
-    /// over SSH as over a WebSocket; these tests are about the SSH leg below
-    /// the controller, which that does not touch.
+    /// node's BootNotification handler was written for. That keeps these
+    /// tests to the SSH leg below the controller. The whole chain - a
+    /// controller that reports to a CSMS and forwards its stations' requests
+    /// up - has two tests of its own, a station over SSH and one over a
+    /// WebSocket (<see cref="AStationsRequest_ThroughTheController_IsAnsweredByTheCSMS"/>).
     /// </para>
     /// <para>
     /// One controller per test, on fresh ports from the node's test kit, with
@@ -840,24 +840,14 @@ namespace cloud.charging.open.TestEnvironment.Tests
         #endregion
 
 
-        #region AStationsRequest_ThroughTheController_IsAnsweredByTheCSMS()
+        #region (private) AControllerReportingToACSMS()
 
         /// <summary>
-        /// The whole chain as a site has it: a controller that reports to a
-        /// CSMS answers nothing of its stations' own, and forwards their
-        /// BootNotification to the CSMS - whose answer has to find its way
-        /// back down to the station, which is then accepted.
+        /// A CSMS, and in place of the fixture's controller one that reports
+        /// to it and answers for nobody: what its stations send to their CSMS
+        /// is forwarded. The actions of the requests the CSMS takes are kept.
         /// </summary>
-        /// <remarks>
-        /// Ignored until the finding is fixed: the BootNotification reaches
-        /// the CSMS and the CSMS answers it, and the answer is lost in the
-        /// controller. Over a WebSocket station the same.
-        /// </remarks>
-        [Test]
-        [Ignore("WWCP_OCPP finding (2026-11-08): in Standard networking mode the answer to a request a controller forwarded up " +
-                "comes back over its client connection, and OCPPWebSocketAdapterIN addresses it to the controller itself - only " +
-                "a server connection asks FORWARD.GetForwardedNodeId - so it never reaches the station, over SSH as over a WebSocket.")]
-        public async Task AStationsRequest_ThroughTheController_IsAnsweredByTheCSMS()
+        private async Task<ConcurrentQueue<String>> AControllerReportingToACSMS()
         {
 
             csmsDirectory = TestParties.TemporaryDirectory("csms-ssh");
@@ -865,8 +855,6 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             csms = await TestPorts.StartedOnFreshPorts(() => NewCSMS(csmsDirectory));
 
-            // A controller of its own for this test: one that reports to the
-            // CSMS, and answers for nobody.
             await LC.DisposeAsync();
             controller = null;
 
@@ -879,12 +867,101 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             var atTheCSMS = new ConcurrentQueue<String>();
 
-            CSMS.Node.OCPP.IN.OnJSONRequestMessageReceived += (timestamp, sender, connection, request, cancellationToken) => {
+            CSMS.Node.OCPP.IN.OnJSONRequestMessageReceived   += (timestamp, sender, connection, request, cancellationToken) => {
                 atTheCSMS.Enqueue(request.Action);
                 return Task.CompletedTask;
             };
 
-            var (station, _) = await AStationDialling("cs001");
+            CSMS.Node.OCPP.IN.OnBinaryRequestMessageReceived += (timestamp, sender, connection, request, cancellationToken) => {
+                atTheCSMS.Enqueue(request.Action);
+                return Task.CompletedTask;
+            };
+
+            return atTheCSMS;
+
+        }
+
+        #endregion
+
+        #region AStationsRequest_ThroughTheController_IsAnsweredByTheCSMS()
+
+        /// <summary>
+        /// The whole chain as a site has it, over SSH below the controller: a
+        /// controller that reports to a CSMS forwards its station's
+        /// BootNotification and a binary data transfer up, and the CSMS's
+        /// answers find their way back down to the station.
+        /// </summary>
+        /// <remarks>
+        /// Before WWCP_OCPP fixed it, the answer to a request a controller
+        /// forwarded up was taken for the controller's own and lost: it comes
+        /// back over the controller's client connection, and in standard
+        /// networking mode names nobody.
+        ///
+        /// No heartbeat: the controller forwards only the requests its OCPP
+        /// node has a filter for, and a heartbeat is none of them - it is
+        /// answered "REJECTED" by the controller, over every transport.
+        /// </remarks>
+        [Test]
+        public async Task AStationsRequest_ThroughTheController_IsAnsweredByTheCSMS()
+        {
+
+            var atTheCSMS     = await AControllerReportingToACSMS();
+
+            var (station, _)  = await AStationDialling("cs001");
+
+            await Until(() => atTheCSMS.Contains("BootNotification"),  "The station's BootNotification reaching the CSMS", station);
+            await Until(() => RegistrationOf(station) == "Accepted",   "The CSMS's answer reaching the station",           station);
+
+            var data          = Encoding.UTF8.GetBytes("Up to the CSMS and back");
+            var transfer      = await NodeOf(station).TransferBinaryData(
+                                          VendorId:             Vendor_Id. GraphDefined,
+                                          MessageId:            Message_Id.GraphDefined_TestMessage,
+                                          Data:                 data,
+                                          SerializationFormat:  SerializationFormats.BinaryTextIds
+                                      );
+
+            Assert.Multiple(() => {
+                Assert.That(atTheCSMS,                  Does.Contain("BinaryDataTransfer"),  "The binary data transfer did not reach the CSMS.");
+                Assert.That(transfer.Result.ResultCode, Is.EqualTo(ResultCode.OK),           $"The binary data transfer: {transfer.Result}{Story(station)}");
+                Assert.That(transfer.Data,              Is.EqualTo(data.AsEnumerable().Reverse().ToArray()));
+            });
+
+        }
+
+        #endregion
+
+        #region AWebSocketStationsRequest_ThroughTheController_IsAnsweredByTheCSMS()
+
+        /// <summary>
+        /// The same chain with the station on the controller's WebSocket port:
+        /// what was lost there was lost for every transport.
+        /// </summary>
+        [Test]
+        public async Task AWebSocketStationsRequest_ThroughTheController_IsAnsweredByTheCSMS()
+        {
+
+            const String password = "a-password-long-enough-for-ocpp";
+
+            var atTheCSMS = await AControllerReportingToACSMS();
+
+            Assert.That(LC.StationLogins.TrySetPassword("cs-ws", password, null, "tests", out _, out var error), Is.True, error);
+
+            var station = NewStation();
+
+            Assert.That(station.Connections.TryAddAuthentication("The local controller", "basic", "cs-ws", password, out var authentication, out error),
+                        Is.True, error);
+
+            Assert.That(station.Connections.TryAddConnection("The local controller",
+                                                             $"ws://127.0.0.1:{LC.OCPPServerSettings.TCPPort}",
+                                                             "localcontroller",
+                                                             true,
+                                                             authentication,
+                                                             null,
+                                                             out _,
+                                                             out error),
+                        Is.True, error);
+
+            station = await Started(station);
 
             await Until(() => atTheCSMS.Contains("BootNotification"),  "The station's BootNotification reaching the CSMS", station);
             await Until(() => RegistrationOf(station) == "Accepted",   "The CSMS's answer reaching the station",           station);
