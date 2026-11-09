@@ -460,19 +460,22 @@ EMSP beside it and can only test against a stub, the EMSP repository has no
 CSMS, and a stub agrees with whatever it is sent.
 
 OCPP over SSH is there the same way: a real charging station dialling a real
-local controller at `ssh://`, signed in with a key of its own, on the subsystem
-`ocpp@open.charging.cloud` of the controller's SSH server — booting, being
-asked things, sending binary data, coming back after the controller restarted,
-beside a station on a WebSocket. And what must not get through: a host key
-other than the one pinned, a key the controller does not know, a HELLO that
-names another station, no HELLO at all, a shell or SFTP or a forwarded port, an
-account without the right, a station an access rule shuts out, a key taken away
-while its session runs, and a frame longer than the controller takes. Where the
-station cannot be made to misbehave, a plain SSH client signed in with a
-station's key stands in for it, against the same real controller. And the whole
-chain once more, with a CSMS above the controller: what a station sends its
-CSMS is forwarded up, and the answer finds its way back down — over SSH and over
-a WebSocket.
+local controller — and, in a second fixture, a real CSMS — at `ssh://`, signed
+in with a key of its own, on the subsystem `ocpp@open.charging.cloud` of that
+server's SSH server — booting, being asked things, sending binary data, coming
+back after the server restarted, beside a station on a WebSocket. And what must
+not get through: a host key other than the one pinned, a key the server does
+not know, a HELLO that names another station, no HELLO at all, a shell or SFTP
+or a forwarded port, an account without the right, a station an access rule
+shuts out, a key taken away while its session runs, and a frame longer than the
+server takes. Where the station cannot be made to misbehave, a plain SSH client
+signed in with a station's key stands in for it, against the same real server.
+Every one of these is asked of both servers. The CSMS, besides, signs a station
+out at once when it is switched off or its login group stops taking SSH keys,
+and stops and starts serving OCPP over SSH as its configuration is changed,
+without a restart. And the whole chain once more, with a CSMS above the
+controller: what a station sends its CSMS is forwarded up, and the answer finds
+its way back down — over SSH and over a WebSocket.
 
 
 ### Your participation
