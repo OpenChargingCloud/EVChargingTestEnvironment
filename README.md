@@ -477,6 +477,17 @@ without a restart. And the whole chain once more, with a CSMS above the
 controller: what a station sends its CSMS is forwarded up, and the answer finds
 its way back down — over SSH and over a WebSocket.
 
+Commissioning turns it around: a tool speaks OCPP 2.1 to the station itself, on
+the station's own SSH server, signed in as an account of the station with that
+account's key. The station answers an installer's tool under the account's own
+name, never as the CSMS, while it keeps reporting to a real CSMS on its uplink —
+over SSH or over a WebSocket — before, during and after the tool. Turned away:
+the operator and a viewer, a HELLO that names the CSMS, the station or anybody
+but the account, an account named like the CSMS, and a tool that speaks OCPP
+1.6 alone. Switched off over the station's web interface, or with its SSH server
+off, a connected tool is let go of; switched on again, a tool gets back in
+without a restart.
+
 
 ### Your participation
 
