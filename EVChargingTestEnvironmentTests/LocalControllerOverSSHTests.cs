@@ -42,6 +42,7 @@ using WWCPNode    = cloud.charging.open.protocols.WWCP.Node.WWCPNode;
 using OCPPv21Node = cloud.charging.open.protocols.OCPPv2_1.NetworkingNode.INetworkingNode;
 using Management  = cloud.charging.open.CSMS.CSMS;
 using Controller  = cloud.charging.open.LocalController.LocalController;
+using Station     = cloud.charging.open.ChargingStation.ChargingStation;
 
 #endregion
 
@@ -371,6 +372,33 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
         }
 
+        /// <summary>
+        /// A heartbeat and a status notification of the given station, both
+        /// answered by the CSMS: requests the controller has no filter of its
+        /// own for, which it answered "Filtered" itself until WWCP_OCPP made a
+        /// local controller forward what no filter decides on.
+        /// </summary>
+        private async Task RequestsWithoutAFilter_AreAnsweredByTheCSMS(Station Station, ConcurrentQueue<String> AtTheCSMS)
+        {
+
+            var heartbeat  = await NodeOf(Station).SendHeartbeat();
+
+            var status     = await NodeOf(Station).SendStatusNotification(
+                                       EVSEId:       EVSE_Id.     Parse(1),
+                                       ConnectorId:  Connector_Id.Parse(1),
+                                       Timestamp:    DateTimeOffset.UtcNow,
+                                       Status:       ConnectorStatus.Available
+                                   );
+
+            Assert.Multiple(() => {
+                Assert.That(heartbeat.Result.ResultCode,  Is.EqualTo(ResultCode.OK),         $"The heartbeat: {heartbeat.Result}{Story(Station)}");
+                Assert.That(status.   Result.ResultCode,  Is.EqualTo(ResultCode.OK),         $"The status notification: {status.Result}{Story(Station)}");
+                Assert.That(AtTheCSMS,                    Does.Contain("Heartbeat"),          "The heartbeat did not reach the CSMS.");
+                Assert.That(AtTheCSMS,                    Does.Contain("StatusNotification"), "The status notification did not reach the CSMS.");
+            });
+
+        }
+
         #endregion
 
 
@@ -379,18 +407,15 @@ namespace cloud.charging.open.TestEnvironment.Tests
         /// <summary>
         /// The whole chain as a site has it, over SSH below the controller: a
         /// controller that reports to a CSMS forwards its station's
-        /// BootNotification and a binary data transfer up, and the CSMS's
-        /// answers find their way back down to the station.
+        /// BootNotification, a binary data transfer, a heartbeat and a status
+        /// notification up, and the CSMS's answers find their way back down to
+        /// the station.
         /// </summary>
         /// <remarks>
         /// Before WWCP_OCPP fixed it, the answer to a request a controller
         /// forwarded up was taken for the controller's own and lost: it comes
         /// back over the controller's client connection, and in standard
         /// networking mode names nobody.
-        ///
-        /// No heartbeat: the controller forwards only the requests its OCPP
-        /// node has a filter for, and a heartbeat is none of them - it is
-        /// answered "REJECTED" by the controller, over every transport.
         /// </remarks>
         [Test]
         public async Task AStationsRequest_ThroughTheController_IsAnsweredByTheCSMS()
@@ -417,6 +442,8 @@ namespace cloud.charging.open.TestEnvironment.Tests
                 Assert.That(transfer.Data,              Is.EqualTo(data.AsEnumerable().Reverse().ToArray()));
             });
 
+            await RequestsWithoutAFilter_AreAnsweredByTheCSMS(station, atTheCSMS);
+
         }
 
         #endregion
@@ -437,6 +464,8 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             await Until(() => atTheCSMS.Contains("BootNotification"),  "The station's BootNotification reaching the CSMS", station);
             await Until(() => RegistrationOf(station) == "Accepted",   "The CSMS's answer reaching the station",           station);
+
+            await RequestsWithoutAFilter_AreAnsweredByTheCSMS(station, atTheCSMS);
 
         }
 
