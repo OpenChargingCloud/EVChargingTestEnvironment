@@ -464,8 +464,9 @@ local controller — and, in a second fixture, a real CSMS — at `ssh://`, sign
 in with a key of its own, on the subsystem `ocpp@open.charging.cloud` of that
 server's SSH server — booting, being asked things, sending binary data, coming
 back after the server restarted, beside a station on a WebSocket. And what must
-not get through: a host key other than the one pinned, a key the server does
-not know, a HELLO that names another station, no HELLO at all, a shell or SFTP
+not get through: a host key other than the one pinned, a station that pins none
+and does not trust on first use — it is not dialled at all —, a key the server
+does not know, a HELLO that names another station, no HELLO at all, a shell or SFTP
 or a forwarded port, an account without the right, a station an access rule
 shuts out, a key taken away while its session runs, and a frame longer than the
 server takes. Where the station cannot be made to misbehave, a plain SSH client
@@ -477,14 +478,15 @@ without a restart. And the whole chain once more, with a CSMS above the
 controller: what a station sends its CSMS is forwarded up, and the answer finds
 its way back down — over SSH and over a WebSocket.
 
-Commissioning turns it around: a tool speaks OCPP 2.1 to the station itself, on
-the station's own SSH server, signed in as an account of the station with that
+Commissioning turns it around: a tool speaks OCPP 2.1 to the station itself —
+or 1.6, handed by its HELLO to the station's node of that version — on the
+station's own SSH server, signed in as an account of the station with that
 account's key. The station answers an installer's tool under the account's own
 name, never as the CSMS, while it keeps reporting to a real CSMS on its uplink —
 over SSH or over a WebSocket — before, during and after the tool. Turned away:
 the operator and a viewer, a HELLO that names the CSMS, the station or anybody
-but the account, an account named like the CSMS, and a tool that speaks OCPP
-1.6 alone. Switched off over the station's web interface, or with its SSH server
+but the account, an account named like the CSMS, and a tool that speaks no
+version of OCPP the station speaks. Switched off over the station's web interface, or with its SSH server
 off, a connected tool is let go of; switched on again, a tool gets back in
 without a restart.
 

@@ -317,13 +317,17 @@ namespace cloud.charging.open.TestEnvironment.Tests
         /// <summary>
         /// A station that dials the server at the given URL, its key given to
         /// the server under the given login - in the given login group - where
-        /// it is to be known, started.
+        /// it is to be known, started. It pins the given host key, the
+        /// server's own where none is given, and none where it is to pin
+        /// nothing: a connection that pins nothing and does not trust on first
+        /// use is not dialled (ChargingStation 2b23a98).
         /// </summary>
         protected async Task<(Station Station, String Connection)> AStationDialling(String   Login,
-                                                                                    String?  Path        = null,
-                                                                                    String?  HostKey     = null,
-                                                                                    Boolean  KeyIsKnown  = true,
-                                                                                    String?  Group       = null)
+                                                                                    String?  Path         = null,
+                                                                                    String?  HostKey      = null,
+                                                                                    Boolean  PinsNothing  = false,
+                                                                                    Boolean  KeyIsKnown   = true,
+                                                                                    String?  Group        = null)
         {
 
             var station = NewStation();
@@ -340,7 +344,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
                                                              null,
                                                              out var id,
                                                              out var error,
-                                                             SshHostKey: HostKey),
+                                                             SshHostKey: PinsNothing ? null : HostKey ?? ServersHostKey),
                         Is.True, error);
 
             return (await Started(station), id!);
@@ -752,31 +756,39 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
         #endregion
 
-        #region HostKey_NonePinned_TheFirstOneShownIsBelievedAndPinned_ImplicitTOFU()
+        #region HostKey_NonePinned_IsNotDialled_SaysWhy_AndPinsNothing()
 
         /// <summary>
-        /// Today's first contact: a station with no host key written down
-        /// believes the first one it is shown, and writes it down - trust on
-        /// first use without being asked for it, as OpenSSH's
-        /// StrictHostKeyChecking=accept-new (ChargingStation 256d77f,
-        /// SshHostKeyTrust.Verify and PinIfFirst).
+        /// A station with no host key written down, and no trust on first use
+        /// asked for, does not dial at all: nothing says which server to
+        /// believe. It says why, signs in nowhere, and pins nothing.
         /// </summary>
         /// <remarks>
-        /// The plan (5.6.1) asked for TOFU only where a connection says "tofu",
-        /// and whether this stays is not decided. Should it go, this is the
-        /// test to turn round: a station with nothing pinned is then refused,
-        /// says why, and pins nothing.
+        /// Until ChargingStation 2b23a98 such a station believed the first host
+        /// key it was shown and wrote it down - trust on first use without
+        /// being asked for it, as OpenSSH's StrictHostKeyChecking=accept-new -
+        /// and this test held that. The white paper decided as the plan (5.6.1)
+        /// had asked: trust on first use only where a connection says so
+        /// ("sshTrustOnFirstUse": "HostKey"), and the key so learned on
+        /// probation until a signed pin set confirms it.
         /// </remarks>
         [Test]
-        public async Task HostKey_NonePinned_TheFirstOneShownIsBelievedAndPinned_ImplicitTOFU()
+        public async Task HostKey_NonePinned_IsNotDialled_SaysWhy_AndPinsNothing()
         {
 
-            var (station, connection) = await AStationDialling("cs001", HostKey: null);
+            var (station, connection) = await AStationDialling("cs001", PinsNothing: true);
 
-            await Until(() => StatusOf(station, connection) == ConnectionStatus.Connected, "Connecting with no host key pinned", station);
+            await Until(() => StatusOf(station, connection) == ConnectionStatus.NotDialled, "Not dialling with no host key pinned", station);
 
-            Assert.That(station.Connections.Connections.Single().SshHostKey, Is.EqualTo(ServersHostKey),
-                        "The host key shown on the first connection was not written down.");
+            var entry = station.Connections.Connections.Single();
+
+            Assert.Multiple(() => {
+                Assert.That(station.DialledConnections[connection],  Does.Contain("pins no host key and does not trust on first use"));
+                Assert.That(HasAnSSHSessionOf("cs001"),             Is.False, $"The station signed in to {TheServer} with nothing to believe it by.");
+                Assert.That(IsConnectedOverSSH("cs001"),            Is.False);
+                Assert.That(entry.SshHostKey,                       Is.Null,  "A host key was written down.");
+                Assert.That(entry.SshLearnedHostKey,                Is.Null,  "A host key was learned.");
+            });
 
         }
 

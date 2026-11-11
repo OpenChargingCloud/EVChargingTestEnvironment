@@ -871,28 +871,51 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
         #endregion
 
-        #region AToolSpeakingOnlyOCPP16_IsRefused_OneThatAlsoSpeaks201_Is201()
+        #region AToolOfOCPP16_IsServed_EveryToolGetsItsFirstChoice()
 
         /// <summary>
-        /// OCPP 1.6 is not served on the subsystem: a tool that offers it alone
-        /// is refused, with what is spoken; one that offers 2.0.1 after it gets
-        /// 2.0.1.
+        /// OCPP 1.6 is served on the subsystem too: a tool gets the first of
+        /// the subprotocols it offers that the station speaks - 1.6 where it
+        /// offers 1.6 alone or first, 2.0.1 where it offers 2.0.1 first - and
+        /// a tool offering nothing the station speaks is refused, with what is
+        /// spoken.
         /// </summary>
+        /// <remarks>
+        /// Until ChargingStation 494a730 OCPP 1.6 was not served here, and a
+        /// tool that offered it alone was refused. Since, the HELLO hands a
+        /// tool to the station's node of its version (white paper "OCPP over
+        /// SSH", decision 13; Hermod's SshMessageServer.RoutedBySubprotocol).
+        /// </remarks>
         [Test]
-        public async Task AToolSpeakingOnlyOCPP16_IsRefused_OneThatAlsoSpeaks201_Is201()
+        public async Task AToolOfOCPP16_IsServed_EveryToolGetsItsFirstChoice()
         {
 
             await AStation(Commissioning: true);
 
-            var (only16, why)  = await Connect(Subprotocols: [ "ocpp1.6" ]);
-            var (also201, _)   = await Connect(Subprotocols: [ "ocpp1.6", "ocpp2.0.1" ]);
+            var chosen = new List<String?>();
+
+            foreach (var offered in new String[][] { [ "ocpp1.6" ], [ "ocpp2.0.1", "ocpp1.6" ], [ "ocpp1.6", "ocpp2.0.1" ] })
+            {
+
+                var (tool, why) = await Connect(Subprotocols: offered);
+
+                Assert.That(tool, Is.Not.Null, $"A tool offering {String.Join(", ", offered)} was refused: {why}");
+
+                chosen.Add(tool!.Connection.Subprotocol);
+
+                await tool.Connection.Close(MessageCloseCode.NormalClosure, "done");
+
+                await Until(() => !TheStation.CommissioningTools.Any(), "The tool going away");
+
+            }
+
+            var (none, refusal) = await Connect(Subprotocols: [ "ocpp1.5" ]);
 
             Assert.Multiple(() => {
-                Assert.That(only16,                          Is.Null,               "A tool speaking OCPP 1.6 alone got the subsystem.");
-                Assert.That(why,                             Does.Contain("unsupported-subprotocol"));
-                Assert.That(why,                             Does.Contain("ocpp2.1"), "The refusal does not say what is spoken.");
-                Assert.That(why,                             Does.Not.Contain("ocpp1.6"));
-                Assert.That(also201?.Connection.Subprotocol, Is.EqualTo("ocpp2.0.1"));
+                Assert.That(chosen,   Is.EqualTo(new[] { "ocpp1.6", "ocpp2.0.1", "ocpp1.6" }));
+                Assert.That(none,     Is.Null, "A tool speaking nothing the station speaks got the subsystem.");
+                Assert.That(refusal,  Does.Contain("unsupported-subprotocol"));
+                Assert.That(refusal,  Does.Contain("ocpp2.1").And.Contain("ocpp1.6"), "The refusal does not say what is spoken.");
             });
 
         }
