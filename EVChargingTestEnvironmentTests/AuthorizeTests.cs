@@ -19,8 +19,6 @@
 #region Usings
 
 using System.Collections.Concurrent;
-using System.Net.Http.Headers;
-using System.Text;
 
 using Newtonsoft.Json.Linq;
 
@@ -62,9 +60,10 @@ namespace cloud.charging.open.TestEnvironment.Tests
     /// </para>
     /// <para>
     /// The cards are what an operator really has: tokens a roaming partner
-    /// sent over OCPI. A plain HTTP client stands in for the partner and
-    /// pushes them, with the token the CSMS handed out for it - one card that
-    /// may charge, and one its partner calls not valid. A third is nobody's.
+    /// sent over OCPI. The partner is a real EMSP, peered with the CSMS over
+    /// OCPI 2.2.1 as RoamingPeeringTests peers them, and the cards are the
+    /// ones it issues - one that may charge, and one it calls not valid. A
+    /// third is nobody's.
     /// </para>
     /// <para>
     /// The transports are the ways of OCPP security profile 1 and of "OCPP
@@ -91,6 +90,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
         private static readonly TimeSpan Patience = TimeSpan.FromSeconds(30);
 
         private Management?   csms;
+        private EMSP.EMSP?    emsp;
         private Controller?   controller;
 
         private readonly List<Station>             stations     = [];
@@ -120,8 +120,10 @@ namespace cloud.charging.open.TestEnvironment.Tests
                 return Task.CompletedTask;
             };
 
-            await ARoamingPartnerPushes(KnownCard,   Valid: true);
-            await ARoamingPartnerPushes(InvalidCard, Valid: false);
+            await AnEMSPIsPeered();
+
+            await TheEMSPIssues(KnownCard,   Valid: true);
+            await TheEMSPIssues(InvalidCard, Valid: false);
 
         }
 
@@ -138,6 +140,9 @@ namespace cloud.charging.open.TestEnvironment.Tests
             if (csms is not null)
                 await csms.DisposeAsync();
 
+            if (emsp is not null)
+                await emsp.DisposeAsync();
+
             foreach (var resolver in resolvers)
                 resolver.Dispose();
 
@@ -146,6 +151,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             controller  = null;
             csms        = null;
+            emsp        = null;
 
             stations.   Clear();
             directories.Clear();
@@ -228,56 +234,71 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
         }
 
-        private String? partnersToken;
-
         /// <summary>
-        /// A roaming partner - a plain HTTP client with the token this CSMS
-        /// handed out for it - pushes a card, as an EMSP does over OCPI 2.2.1.
+        /// A real EMSP, peered with the CSMS: the EMSP has a token ready for
+        /// the operator, the operator is told it and where to present it, and
+        /// registers.
         /// </summary>
-        private async Task ARoamingPartnerPushes(String UID, Boolean Valid)
+        private async Task AnEMSPIsPeered()
         {
 
-            if (partnersToken is null || CSMS.OCPIVersions.SelectMany(version => version.RemoteParties).All(party => party.PartyId.ToString() != "GDF"))
-            {
+            var directory = TestParties.TemporaryDirectory("emsp-authorize");
+            directories.Add(directory);
 
-                var added = await CSMS.AddRemotePartyAsync(new JObject(
-                                           new JProperty("version",      "2.2.1"),
-                                           new JProperty("countryCode",  "DE"),
-                                           new JProperty("partyId",      "GDF"),
-                                           new JProperty("role",         "EMSP"),
-                                           new JProperty("name",         "GraphDefined EMSP")
-                                       ));
+            emsp = TestParties.NewEMSP(directory);
 
-                Assert.That(added.Success, Is.True, $"The CSMS would not take the EMSP as a partner: {added.Message}");
+            await emsp.Start();
 
-                partnersToken = added.Data!.Value<String>("ourToken")!;
+            var atTheEMSP  = await emsp.AddRemotePartyAsync(new JObject(
+                                            new JProperty("version",      "2.2.1"),
+                                            new JProperty("countryCode",  CSMS.PartyId.CountryCode.ToString()),
+                                            new JProperty("partyId",      CSMS.PartyId.PartyId.    ToString()),
+                                            new JProperty("role",         "CPO"),
+                                            new JProperty("name",         CSMS.BusinessDetails.Name)
+                                        ));
 
-            }
+            Assert.That(atTheEMSP.Success, Is.True, $"The EMSP would not take the operator as a partner: {atTheEMSP.Message}");
 
-            using var partner = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{CSMS.HTTPPort}") };
+            var atTheCSMS  = await CSMS.AddRemotePartyAsync(new JObject(
+                                            new JProperty("version",      "2.2.1"),
+                                            new JProperty("countryCode",  emsp.PartyId.CountryCode.ToString()),
+                                            new JProperty("partyId",      emsp.PartyId.PartyId.    ToString()),
+                                            new JProperty("role",         "EMSP"),
+                                            new JProperty("name",         emsp.BusinessDetails.Name),
+                                            new JProperty("theirToken",   atTheEMSP.Data!.Value<String>("ourToken")),
+                                            new JProperty("versionsURL",  emsp.OCPIVersionsURL.ToString())
+                                        ));
 
-            partner.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Token", Convert.ToBase64String(Encoding.UTF8.GetBytes(partnersToken)));
-            partner.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            Assert.That(atTheCSMS.Success, Is.True, $"The operator would not take the EMSP as a partner: {atTheCSMS.Message}");
 
-            var put  = await partner.PutAsync(
-                                 $"/ext/v2.2.1/cpo/tokens/DE/GDF/{UID}",
-                                 new StringContent(new JObject(
-                                     new JProperty("country_code",  "DE"),
-                                     new JProperty("party_id",      "GDF"),
-                                     new JProperty("uid",           UID),
-                                     new JProperty("type",          "RFID"),
-                                     new JProperty("contract_id",   "DE-GDF-C12345678-X"),
-                                     new JProperty("issuer",        "GraphDefined EMSP"),
-                                     new JProperty("valid",         Valid),
-                                     new JProperty("whitelist",     "ALLOWED"),
-                                     new JProperty("last_updated",  "2026-11-01T10:00:00Z")
-                                 ).ToString(), Encoding.UTF8, "application/json")
-                             );
+            var partner     = CSMS.OCPIVersions.
+                                   SelectMany(version => version.RemoteParties).
+                                   First     (party   => party.PartyId == emsp.PartyId.PartyId);
 
-            var text = await put.Content.ReadAsStringAsync();
+            var registered  = await CSMS.RegisterRemotePartyAsync("2.2.1", partner.Id.ToString());
 
-            Assert.That(put.IsSuccessStatusCode,                          Is.True,          $"The partner's PUT of the card answered {(Int32) put.StatusCode}: {text}");
-            Assert.That(JObject.Parse(text).Value<Int32>("status_code"),  Is.EqualTo(1000), text);
+            Assert.That(registered.Success, Is.True, $"The operator could not register with the EMSP: {registered.Message}{Story()}");
+
+        }
+
+        /// <summary>
+        /// The EMSP issues a card - and the operator knows of it, because the
+        /// EMSP sent it there over OCPI.
+        /// </summary>
+        private async Task TheEMSPIssues(String UID, Boolean Valid)
+        {
+
+            var issued = await emsp!.AddTokenAsync(new JObject(
+                                         new JProperty("version",  "2.2.1"),
+                                         new JProperty("uid",      UID),
+                                         new JProperty("type",     "RFID"),
+                                         new JProperty("valid",    Valid)
+                                     ));
+
+            Assert.That(issued.Success, Is.True, $"The EMSP would not issue the card: {issued.Message}");
+
+            await Until(() => CSMS.OCPIVersions.SelectMany(version => version.Tokens).Any(token => token.Value<String>("uid") == UID),
+                        $"The card {UID} the EMSP issued reaching the operator");
 
         }
 
@@ -509,7 +530,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
             => String.Join(
                    Environment.NewLine,
                    new[] { "", "What was said:" }.
-                       Concat(new (String Who, WWCPNode? Node)[] { ("CSMS", csms), ("LC", controller) }.
+                       Concat(new (String Who, WWCPNode? Node)[] { ("CSMS", csms), ("EMSP", emsp), ("LC", controller) }.
                                   SelectMany(speaker => speaker.Node?.Log.Recent(100).Select(entry => $"  {speaker.Who,-4} {entry.Timestamp:HH:mm:ss.fff} [{entry.LevelName}] {entry.Message}") ?? [])).
                        Concat(Station?.Log.Recent(100).Select(entry => $"  CS   {entry.Timestamp:HH:mm:ss.fff} [{entry.LevelName}] {entry.Message}") ?? []).
                        Concat(Station?.DialledConnections.Select(said => $"  CS   dialled {said.Key}: {said.Value}") ?? [])
