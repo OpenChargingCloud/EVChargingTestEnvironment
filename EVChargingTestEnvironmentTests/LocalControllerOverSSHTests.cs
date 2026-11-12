@@ -326,6 +326,11 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             Assert.That(management.StationLogins.TrySetPassword(ControllerId, UplinkPassword, null, "tests", out _, out var error), Is.True, error);
 
+            // A local controller's login: in the overlay network, which the
+            // controller dials by default, what it forwards in the name of
+            // its stations is taken only from a login marked as one.
+            Assert.That(management.StationLogins.TrySetLocalController(ControllerId, true, out var markError), Is.True, markError);
+
             return management;
 
         }
