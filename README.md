@@ -492,15 +492,19 @@ without a restart.
 
 And a card: a real station boots at a real CSMS, is accepted, and asks it with
 an OCPP Authorize before a card starts a session — signed in with a password in
-HTTP Basic, with a one-time password in HTTP TOTP, and with an SSH key. The
+HTTP Basic, with a one-time password in HTTP TOTP, with an SSH key, and with a
+TLS client certificate. The
 cards are what an operator has, the tokens of a roaming partner: a real EMSP,
 peered with the CSMS over OCPI, issues them and sends them there. The one its
 partner calls valid charges, the one it calls not valid and the one
 that is nobody's do not, and a stop is nobody's to ask about. The same through
 a local controller, which sends the question on and the answer back — and
-answers at once, and with no yes, once its CSMS is gone. A station signing in
-with a TLS client certificate is not among these yet: it judges its server by
-the roots of the machine, and a test does not put one there.
+answers at once, and with no yes, once its CSMS is gone.
+
+For the client certificate the operator has a CA of its own, which no machine
+knows: it signs the certificate of the CSMS and the one of the station, the CSMS
+believes the stations it vouches for, and the station keeps it as a TLS root of
+its own certificate store, for "ocpp". Nothing is put into the machine's store.
 
 
 ### Your participation

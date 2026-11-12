@@ -19,6 +19,8 @@
 #region Usings
 
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 
 using Newtonsoft.Json.Linq;
 
@@ -28,6 +30,7 @@ using org.GraphDefined.Vanaheimr.Hermod;
 using org.GraphDefined.Vanaheimr.Hermod.DNS;
 using org.GraphDefined.Vanaheimr.Hermod.SSH;
 
+using cloud.charging.open.protocols.WWCP.Node.Certificates;
 using cloud.charging.open.protocols.WWCP.Node.Configuration;
 using cloud.charging.open.protocols.WWCP.Node.TestKit;
 
@@ -38,6 +41,7 @@ using WWCPNode    = cloud.charging.open.protocols.WWCP.Node.WWCPNode;
 using Management  = cloud.charging.open.CSMS.CSMS;
 using Controller  = cloud.charging.open.LocalController.LocalController;
 using Station     = cloud.charging.open.ChargingStation.ChargingStation;
+using ServerCertificateStore = cloud.charging.open.CSMS.OCPP.ServerCertificateStore;
 
 #endregion
 
@@ -68,7 +72,15 @@ namespace cloud.charging.open.TestEnvironment.Tests
     /// <para>
     /// The transports are the ways of OCPP security profile 1 and of "OCPP
     /// over SSH": a password in HTTP Basic, a one-time password in HTTP TOTP,
-    /// and an SSH key. The same three questions are asked over each.
+    /// and an SSH key - and the way of security profile 3, a TLS client
+    /// certificate. The same three questions are asked over each.
+    /// </para>
+    /// <para>
+    /// For the certificate the operator has a CA of its own, made here and
+    /// known to no machine: it signs the certificate of the CSMS and the one
+    /// of the station, the CSMS is told to believe stations it vouches for,
+    /// and the station keeps it as a TLS root of its own certificate store
+    /// for "ocpp". Nothing is installed on the machine.
     /// </para>
     /// </remarks>
     [TestFixture]
@@ -89,9 +101,15 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
         private static readonly TimeSpan Patience = TimeSpan.FromSeconds(30);
 
-        private Management?   csms;
-        private EMSP.EMSP?    emsp;
-        private Controller?   controller;
+        private Management?        csms;
+        private EMSP.EMSP?         emsp;
+        private Controller?        controller;
+
+        /// <summary>
+        /// The operator's own CA, where a test wants one: no machine knows it.
+        /// </summary>
+        private X509Certificate2?  ca;
+        private ECDsa?             caKey;
 
         private readonly List<Station>             stations     = [];
         private readonly List<String>              directories  = [];
@@ -113,7 +131,15 @@ namespace cloud.charging.open.TestEnvironment.Tests
             var directory = TestParties.TemporaryDirectory("csms-authorize");
             directories.Add(directory);
 
-            csms = await TestPorts.StartedOnFreshPorts(() => NewCSMS(directory));
+            // The station port of a CSMS speaks TLS or it does not, decided
+            // once when it starts: the test of the client certificate gets a
+            // CSMS on security profile 3, the others one on profile 1.
+            var withTLS = TestContext.CurrentContext.Test.Arguments.Contains("certificate");
+
+            if (withTLS)
+                TheCSMSGetsACertificateOfTheOperatorsCA(directory);
+
+            csms = await TestPorts.StartedOnFreshPorts(() => NewCSMS(directory, withTLS));
 
             csms.Node.OCPP.IN.OnJSONRequestMessageReceived += (timestamp, sender, connection, request, cancellationToken) => {
                 atTheCSMS.Enqueue(request.Action);
@@ -149,9 +175,14 @@ namespace cloud.charging.open.TestEnvironment.Tests
             foreach (var directory in directories)
                 TestParties.Remove(directory);
 
+            ca?.   Dispose();
+            caKey?.Dispose();
+
             controller  = null;
             csms        = null;
             emsp        = null;
+            ca          = null;
+            caKey       = null;
 
             stations.   Clear();
             directories.Clear();
@@ -184,9 +215,10 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
         /// <summary>
         /// A CSMS that is a charge point operator, with its station port and
-        /// OCPP over SSH switched on.
+        /// OCPP over SSH switched on: the port on security profile 1, or on
+        /// profile 3 - TLS, and a station is known by its certificate.
         /// </summary>
-        private Management NewCSMS(String Directory)
+        private Management NewCSMS(String Directory, Boolean WithTLS = false)
         {
 
             System.IO.Directory.CreateDirectory(Directory);
@@ -199,7 +231,8 @@ namespace cloud.charging.open.TestEnvironment.Tests
                     new JProperty("enabled",           true),
                     new JProperty("address",           "127.0.0.1"),
                     new JProperty("port",              TestPorts.Free()),
-                    new JProperty("securityProfiles",  new JArray(1)),
+                    new JProperty("securityProfiles",  new JArray(WithTLS ? 3 : 1)),
+                    new JProperty("reachableAs",       new JArray("127.0.0.1")),
                     new JProperty("subprotocols",      new JArray("ocpp2.1", "ocpp2.0.1")),
                     new JProperty("ssh",               new JObject(
                         new JProperty("enabled",         true)
@@ -230,7 +263,88 @@ namespace cloud.charging.open.TestEnvironment.Tests
             // The controller of the last test signs in here with a password.
             Assert.That(management.StationLogins.TrySetPassword(ControllerId, UplinkPassword, null, "tests", out _, out var error), Is.True, error);
 
+            // Whatever the operator's CA vouches for is a station of this CSMS.
+            if (WithTLS)
+                Assert.That(management.ClientTrust.TryAdd(ca!.ExportCertificatePem(), "The operator's CA", out _, out _, out error), Is.True, error);
+
             return management;
+
+        }
+
+        #endregion
+
+        #region (private) The operator's CA
+
+        /// <summary>
+        /// The operator's CA, made in memory. Its name is its own per run:
+        /// Windows caches chain building by issuer name, and a second CA
+        /// called what the last run called its own is looked up, found, and
+        /// does not fit.
+        /// </summary>
+        private X509Certificate2 TheOperatorsCA()
+        {
+
+            if (ca is not null)
+                return ca;
+
+            caKey        = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+            var request  = new CertificateRequest($"CN=The operator's CA {Guid.NewGuid()}", caKey, HashAlgorithmName.SHA256);
+
+            request.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, false, 0, true));
+            request.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign, true));
+            request.CertificateExtensions.Add(new X509SubjectKeyIdentifierExtension(request.PublicKey, false));
+
+            ca           = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(365));
+
+            return ca;
+
+        }
+
+        /// <summary>
+        /// The operator's CA answers a signing request as it was made: with
+        /// the names and the purposes it asked for.
+        /// </summary>
+        private String SignedByTheOperatorsCA(String CSR)
+        {
+
+            var issuer   = TheOperatorsCA();
+
+            var request  = CertificateRequest.LoadSigningRequestPem(
+                               CSR,
+                               HashAlgorithmName.SHA256,
+                               CertificateRequestLoadOptions.UnsafeLoadCertificateExtensions
+                           );
+
+            using var certificate = request.Create(
+                                        issuer.SubjectName,
+                                        X509SignatureGenerator.CreateForECDsa(caKey!),
+                                        DateTimeOffset.UtcNow.AddDays(-1),
+                                        DateTimeOffset.UtcNow.AddDays(30),
+                                        Guid.NewGuid().ToByteArray()
+                                    );
+
+            return certificate.ExportCertificatePem();
+
+        }
+
+        /// <summary>
+        /// A key of the CSMS's own and a certificate of the operator's CA for
+        /// it, in the store of the CSMS before it starts: this is what makes
+        /// its station port speak TLS.
+        /// </summary>
+        private void TheCSMSGetsACertificateOfTheOperatorsCA(String Directory)
+        {
+
+            System.IO.Directory.CreateDirectory(Directory);
+
+            using var store = new ServerCertificateStore(Path.Combine(Directory, ServerCertificateStore.DefaultDirectoryName));
+
+            Assert.That(store.TryCreateKey("127.0.0.1", [ "127.0.0.1" ], null, out _, out var csr, out var error), Is.True, error);
+
+            Assert.That(store.TryAddCertificate(SignedByTheOperatorsCA(csr!) + Environment.NewLine + TheOperatorsCA().ExportCertificatePem(),
+                                                [ "127.0.0.1" ], out _, out _, out error),
+                        Is.True, error);
 
         }
 
@@ -360,6 +474,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
             String? error;
             String  url;
             String? hostKey     = null;
+            String? certificate = null;
 
             switch (Transport)
             {
@@ -383,6 +498,26 @@ namespace cloud.charging.open.TestEnvironment.Tests
                     hostKey = CSMS.SSHHostKey!.Split(' ', 2)[1];
                     break;
 
+                case "certificate":
+
+                    // A key of the station's own, and for it a certificate of
+                    // the operator's CA that names the station: that name is
+                    // who the CSMS takes it for.
+                    Assert.That(station.ClientCertificates.TryCreateKey(Login, null, out var keyId, out var csr, out error), Is.True, error);
+                    Assert.That(station.ClientCertificates.TryAddCertificate(SignedByTheOperatorsCA(csr!), out _, out _, out error), Is.True, error);
+
+                    // The CSMS is believed because the operator's CA is a TLS
+                    // root of the station's own store, kept for OCPP - the
+                    // machine has never heard of it.
+                    Assert.That(station.Certificates.Import(System.Text.Encoding.ASCII.GetBytes(TheOperatorsCA().ExportCertificatePem()),
+                                                            CertificateKind.TLSRoot, null, "The operator's CA",
+                                                            [ Station.OCPPCertificateUsage ], out _, out error),
+                                Is.True, error);
+
+                    url         = $"wss://127.0.0.1:{webSocketPort}";
+                    certificate = keyId;
+                    break;
+
                 default:
                     throw new ArgumentException($"'{Transport}' is no transport these tests know.", nameof(Transport));
 
@@ -393,7 +528,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
                                                              "csms",
                                                              true,
                                                              credentials,
-                                                             null,
+                                                             certificate,
                                                              out var connection,
                                                              out error,
                                                              SshHostKey: hostKey),
@@ -599,17 +734,37 @@ namespace cloud.charging.open.TestEnvironment.Tests
         /// <summary>
         /// A station signs in to its CSMS, boots, is accepted - and a card
         /// starts a session there exactly where the CSMS says it may: over a
-        /// password, over a one-time password, and over SSH.
+        /// password, over a one-time password, over SSH, and over TLS with a
+        /// certificate of its own.
         /// </summary>
         [TestCase("basic")]
         [TestCase("totp")]
         [TestCase("ssh")]
+        [TestCase("certificate")]
         public async Task AStationBoots_AndItsCardsAreDecidedOnByTheCSMS(String Transport)
         {
 
             var station = await AStationAtTheCSMS(Transport, "cs001");
 
             Assert.That(atTheCSMS, Does.Contain("BootNotification"), $"The station's BootNotification did not reach the CSMS.{Story(station)}");
+
+            if (Transport == "certificate")
+            {
+
+                var judgement = station.LastJudgementOf(Station.OCPPCertificateUsage, "127.0.0.1");
+
+                Assert.Multiple(() => {
+                    Assert.That(CSMS.OCPPServerTLS,           Is.True,  "The station port of the CSMS does not speak TLS.");
+                    Assert.That(judgement?.Accepted,          Is.True,  $"The station did not believe the CSMS.{Story(station)}");
+                    Assert.That(judgement?.RootFingerprint,   Is.EqualTo(CertificateEntry.ThumbprintOf(ca!)),
+                                "The CSMS was believed through something else than the operator's CA.");
+                    Assert.That(CSMS.StationCertificates.Get("cs001", "ChargingStationCertificate")?.Source, Is.EqualTo("presented"),
+                                "The CSMS does not know the certificate the station signed in with.");
+                    Assert.That(CSMS.Log.Recent(200).Select(entry => entry.Message),
+                                Has.Some.Contains("'cs001' signed in").And.Contains("with a certificate (security profile 3)"));
+                });
+
+            }
 
             await TheThreeCards(station, Transport);
 
