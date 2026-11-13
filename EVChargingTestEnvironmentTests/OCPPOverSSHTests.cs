@@ -1047,7 +1047,9 @@ namespace cloud.charging.open.TestEnvironment.Tests
             await Until(() => !IsConnectedOverSSH("cs001") && !HasAnSSHSessionOf("cs001"), "The session of a key taken away ending", station);
             await Until(() => StatusOf(station, connection) == ConnectionStatus.Refused,    "The station being turned away when it comes back", station);
 
-            Assert.That(station.DialledConnections[connection], Does.Contain("did not let this station in"));
+            // The SSH connection is the station's and outlives the session: coming
+            // back is a new channel of it, and that is what is refused.
+            Assert.That(station.DialledConnections[connection], Does.Contain("refused it the OCPP subsystem"));
 
         }
 

@@ -256,7 +256,9 @@ namespace cloud.charging.open.TestEnvironment.Tests
             await Until(() => StatusOf(cs001, connection001) == ConnectionStatus.Refused,  "The station being turned away when it comes back", cs001);
 
             Assert.Multiple(() => {
-                Assert.That(cs001.DialledConnections[connection001],  Does.Contain("did not let this station in"));
+                // The SSH connection is the station's and outlives the session: coming
+                // back is a new channel of it, and that is what is refused.
+                Assert.That(cs001.DialledConnections[connection001],  Does.Contain("refused it the OCPP subsystem"));
                 Assert.That(StatusOf(cs002, connection002),           Is.EqualTo(ConnectionStatus.Connected), "Switching cs001 off ended cs002's session.");
                 Assert.That(IsConnectedOverSSH("cs002"),              Is.True);
             });
@@ -292,7 +294,9 @@ namespace cloud.charging.open.TestEnvironment.Tests
             await Until(() => StatusOf(inTheGroup, connection) == ConnectionStatus.Refused, "The station being turned away when it comes back", inTheGroup);
 
             Assert.Multiple(() => {
-                Assert.That(inTheGroup.DialledConnections[connection],  Does.Contain("did not let this station in"));
+                // The SSH connection is the station's and outlives the session: coming
+                // back is a new channel of it, and that is what is refused.
+                Assert.That(inTheGroup.DialledConnections[connection],  Does.Contain("refused it the OCPP subsystem"));
                 Assert.That(StatusOf(elsewhere, other),                 Is.EqualTo(ConnectionStatus.Connected), "A change to another group ended cs002's session.");
                 Assert.That(IsConnectedOverSSH("cs002"),                Is.True);
             });
@@ -322,7 +326,9 @@ namespace cloud.charging.open.TestEnvironment.Tests
             await Until(() => StatusOf(station, connection) == ConnectionStatus.Refused,    "The station being turned away when it comes back", station);
 
             Assert.Multiple(() => {
-                Assert.That(station.DialledConnections[connection],  Does.Contain("did not let this station in"));
+                // The SSH connection is the station's and outlives the session: coming
+                // back is a new channel of it, and that is what is refused.
+                Assert.That(station.DialledConnections[connection],  Does.Contain("refused it the OCPP subsystem"));
                 Assert.That(CSMS.OCPPOverSSHServed,                  Is.False);
             });
 
