@@ -47,7 +47,7 @@ using cloud.charging.open.protocols.OCPPv2_1;
 using cloud.charging.open.protocols.OCPPv2_1.CS;
 using cloud.charging.open.protocols.OCPPv2_1.CSMS;
 
-using cloud.charging.open.ChargingStation.OCPP;
+using cloud.charging.open.protocols.OCPP.Node.Connections;
 
 using Station     = cloud.charging.open.ChargingStation.ChargingStation;
 using Management  = cloud.charging.open.CSMS.CSMS;

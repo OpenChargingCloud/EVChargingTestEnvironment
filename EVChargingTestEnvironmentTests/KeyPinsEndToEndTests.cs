@@ -29,7 +29,7 @@ using cloud.charging.open.protocols.OCPP.Node.KeyPins;
 using cloud.charging.open.protocols.WWCP.Node.Configuration;
 using cloud.charging.open.protocols.WWCP.Node.TestKit;
 
-using cloud.charging.open.ChargingStation.OCPP;
+using cloud.charging.open.protocols.OCPP.Node.Connections;
 using cloud.charging.open.LocalController.OCPP;
 
 using WWCPNode    = cloud.charging.open.protocols.WWCP.Node.WWCPNode;
