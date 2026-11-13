@@ -190,13 +190,10 @@ namespace cloud.charging.open.TestEnvironment
             Console.WriteLine();
             Console.WriteLine("OCPP:");
             Console.WriteLine("  --ocpp-tls        encrypt the two OCPP ports and dial them with wss:// under");
-            Console.WriteLine("                    security profile 2. Off by default, because both ends need this");
-            Console.WriteLine("                    machine to know the OCPP root and neither can be given it from");
-            Console.WriteLine("                    inside this process: the server will not present a certificate");
-            Console.WriteLine("                    whose chain it cannot build here, and the client checks the one");
-            Console.WriteLine("                    it is shown against the roots this machine has. The certificates");
-            Console.WriteLine("                    are minted and in place either way; the console prints the one");
-            Console.WriteLine("                    command that installs the root");
+            Console.WriteLine("                    security profile 2. The servers present certificates of this");
+            Console.WriteLine("                    environment's OCPP root, and the station and the local controller");
+            Console.WriteLine("                    believe them because that root is a TLS root of their own");
+            Console.WriteLine("                    certificate stores: nothing is installed on this machine");
             Console.WriteLine();
             Console.WriteLine("A Megawatt Charging System coupler instead of a CCS one:");
             Console.WriteLine("  --mcs             a 10BASE-T1S bus below the cable, emulated over UDP multicast");

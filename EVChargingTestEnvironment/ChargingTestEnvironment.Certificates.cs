@@ -130,6 +130,30 @@ namespace cloud.charging.open.TestEnvironment
 
             #endregion
 
+            #region The two that dial: whom they believe
+
+            // The station believes a server of an OCPP connection, and the
+            // local controller its CSMS, where its chain ends at a root the
+            // machine trusts - or at a TLS root of their own certificate
+            // store. The OCPP root goes there, and so into no store of the
+            // machine: believed by these two, for this, and by nobody else.
+            //
+            // Whether or not the ports are encrypted, as the certificates are
+            // minted either way. Idempotent: an entry is named after the
+            // fingerprint of what it holds.
+            var ocppRoot = System.Text.Encoding.ASCII.GetBytes(Certificates.OCPP.RootTrustPEM);
+
+            if (!Station.Certificates.Import(ocppRoot, CertificateKind.TLSRoot, null, OCPPRootLabel, [ cloud.charging.open.ChargingStation.ChargingStation.OCPPCertificateUsage ], out _, out var stationRootError))
+                throw new InvalidOperationException($"The station could not be given the OCPP root: {stationRootError}");
+
+            if (Controller is not null &&
+               !Controller.Certificates.Import(ocppRoot, CertificateKind.TLSRoot, null, OCPPRootLabel, out _, out var controllerRootError))
+            {
+                throw new InvalidOperationException($"The local controller could not be given the OCPP root: {controllerRootError}");
+            }
+
+            #endregion
+
             #region Who may sign in where, and with what
 
             // One password per line of the chain, made up here and written to
@@ -147,6 +171,12 @@ namespace cloud.charging.open.TestEnvironment
 
                 // ...and the controller dials the CSMS.
                 AllowStation(CSMS.StationLogins, ControllerNodeId, controllerSecret, "CSMS");
+
+                // ...in the name of the station behind it, which a login may
+                // only where it is marked as a local controller's: a frame of
+                // any other login in another station's name is dropped.
+                if (!CSMS.StationLogins.TrySetLocalController(ControllerNodeId, true, out var markError))
+                    throw new InvalidOperationException($"CSMS: '{ControllerNodeId}' could not be marked as a local controller: {markError}");
 
                 if (!Controller.CSMSLogin.TrySetPassword(ControllerNodeId, controllerSecret, out var loginError))
                     throw new InvalidOperationException($"The local controller could not be given its CSMS login: {loginError}");
@@ -185,42 +215,37 @@ namespace cloud.charging.open.TestEnvironment
 
             #endregion
 
-            #region What this machine can actually do with those certificates
+            #region What can actually be done with those certificates
 
             // Asked now rather than found out in a handshake. .NET builds the
-            // chain of a server's own certificate before it will present one,
-            // and refuses where it cannot reach a root this machine has - what
-            // a charging station then sees is a TLS handshake reset with
-            // nothing said, at a port reporting itself as running and
-            // encrypted.
+            // chain of a server's own certificate before it will present one;
+            // where it cannot, what a charging station sees is a TLS handshake
+            // reset with nothing said, at a port reporting itself as running
+            // and encrypted.
             var serves = csmsServes && (Controller is null || controllerServes);
 
             if (options.OCPPTLS)
             {
 
-                // Both ends of an encrypted OCPP port need the same thing from
-                // this machine, and neither of them can be given it from
-                // inside this process. The server will not present a
-                // certificate whose chain it cannot build here; the client
-                // validates the one it is shown the ordinary way, against the
-                // roots this machine has. A private root that is in no store
-                // fails both - the server silently, the client as a bare "400
-                // Bad Request" with the real reason wrapped inside it.
-                //
-                // Putting a root into somebody's certificate store is not
-                // something a test environment should do while they are
-                // looking the other way, so it is said rather than done.
+                // Neither end needs anything from this machine. The servers
+                // present their certificate and the server CA above it, which
+                // is a chain that can be built; the station and the local
+                // controller keep the OCPP root as a TLS root of their own
+                // stores, which is where they look when the machine's roots
+                // do not vouch for a server. Nothing is installed anywhere.
                 Console.Say(
                     "env",
-                    $"OCPP: the two ports are encrypted (security profile {options.OCPPSecurityProfile}). Both ends need this " +
-                    $"machine to know the OCPP root, and it is not installed by starting this: {InstallRootCommand()}"
+                    $"OCPP: the two ports are encrypted (security profile {options.OCPPSecurityProfile}). The OCPP root is a TLS " +
+                    $"root of the station's{(Controller is not null ? " and the local controller's" : "")} own certificate store, " +
+                    $"and in no store of this machine."
                 );
 
                 if (!serves)
                     Console.Say(
                         "env",
-                        "Until then the ports cannot even present their certificates here, so nothing below them will " +
-                        "get through the handshake at all. Leave --ocpp-tls off for a bench that does not need TLS."
+                        "A server certificate in place cannot be presented all the same, so nothing below that port will " +
+                        "get through the handshake: see Server certificates in the web interfaces of the CSMS and the " +
+                        "local controller for the one that is passed over, and why."
                     );
 
             }
@@ -229,8 +254,7 @@ namespace cloud.charging.open.TestEnvironment
                 Console.Say(
                     "env",
                     $"OCPP: security profile 1, so the two OCPP ports are unencrypted. The certificates for profile 2 " +
-                    $"are minted and in place; --ocpp-tls turns them on, and needs the OCPP root in this machine's " +
-                    $"certificate store to work."
+                    $"are minted and in place, and --ocpp-tls turns them on."
                 );
 
             #endregion
@@ -350,19 +374,19 @@ namespace cloud.charging.open.TestEnvironment
         /// </summary>
         /// <remarks>
         /// <para>
-        /// The question is whether .NET can build the chain of this certificate
-        /// on <em>this</em> machine. It insists on doing that before a server
-        /// may present one, and a private authority whose root is in no machine
-        /// store fails it - which shows up as a TLS handshake reset with
-        /// nothing said, at every charging station, with the port reporting
-        /// itself as running and encrypted.
+        /// The question is whether .NET can build the chain of this certificate.
+        /// It insists on doing that before a server may present one, and a
+        /// chain that ends nowhere fails it - which shows up as a TLS handshake
+        /// reset with nothing said, at every charging station, with the port
+        /// reporting itself as running and encrypted.
         /// </para>
         /// <para>
-        /// So it is asked here rather than found out in a handshake, and the
-        /// answer is what the console says and what the OCPP security profile
-        /// is chosen for. Putting a root into the machine's certificate store
-        /// is not something a test environment should do to somebody's
-        /// computer while they are looking the other way.
+        /// The chain only has to be buildable, not trusted, and the leaf with
+        /// the server CA that signed it is one: the root is not in the store
+        /// (it drops a root that comes along, as one is not sent) and need not
+        /// be in a store of the machine either. It is still asked here rather
+        /// than found out in a handshake, and the answer is what the console
+        /// says.
         /// </para>
         /// </remarks>
         private Boolean EnsureServerCertificate(CSMSStore.ServerCertificateStore  Store,
@@ -629,32 +653,13 @@ namespace cloud.charging.open.TestEnvironment
 
         #endregion
 
-        #region (private) InstallRootCommand()
+        #region Data
 
         /// <summary>
-        /// What somebody has to type, on this operating system, to make this
-        /// machine believe the OCPP root.
+        /// What the OCPP root is called in the certificate stores of the two
+        /// that dial.
         /// </summary>
-        /// <remarks>
-        /// The user's own store on Windows rather than the machine's, because
-        /// it needs no administrator and .NET's chain building reads both. The
-        /// other two want a privileged copy into a system directory, so those
-        /// commands are given with what they need rather than without.
-        /// </remarks>
-        private String InstallRootCommand()
-        {
-
-            var root = Certificates.OCPPRootTrustFile;
-
-            if (OperatingSystem.IsWindows())
-                return $"certutil -addstore -user Root \"{root}\"";
-
-            if (OperatingSystem.IsMacOS())
-                return $"sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain \"{root}\"";
-
-            return $"sudo cp \"{root}\" /usr/local/share/ca-certificates/ocpp-test-root.crt && sudo update-ca-certificates";
-
-        }
+        private const String OCPPRootLabel = "EV Charging Test Environment OCPP Root";
 
         #endregion
 

@@ -160,13 +160,11 @@ namespace cloud.charging.open.TestEnvironment
         /// </summary>
         /// <remarks>
         /// <para>
-        /// Off, and off is the honest default rather than the lazy one. .NET
-        /// builds the chain of a server's own certificate before it will
-        /// present it, and refuses where it cannot reach a root the machine
-        /// has - so an encrypted OCPP port whose private root is in no machine
-        /// store turns every charging station away during the handshake, while
-        /// reporting itself as running and encrypted. Whether this machine can
-        /// do it is said on the console at every start.
+        /// Off by default, and no longer because it could not be on: the
+        /// servers present their certificate with the server CA above it, and
+        /// the station and the local controller keep the OCPP root as a TLS
+        /// root of their own certificate stores, so no store of the machine
+        /// has to know it.
         /// </para>
         /// <para>
         /// Security profile 1 - a password over an unencrypted WebSocket - is

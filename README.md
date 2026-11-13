@@ -261,31 +261,34 @@ nine more — for pointing at either side on purpose. See
 
 ### OCPP and TLS
 
-Security profile 1 — a password over an unencrypted WebSocket — by default, and
-that is a decision rather than an oversight.
+Security profile 1 — a password over an unencrypted WebSocket — by default.
+`--ocpp-tls` encrypts the two OCPP ports and has them dialled with `wss://`
+under security profile 2, and nothing has to be installed on the machine for
+it: the OCPP root is in no certificate store but the ones of this environment.
 
-Both ends of an encrypted OCPP port need this *machine* to know the OCPP root,
-and neither can be given it from inside the process. The server will not present
-a certificate whose chain .NET cannot build here; the client validates the one it
-is shown the ordinary way, against the roots the machine has. A private root that
-is in no store fails both — the server silently, at a port reporting itself as
-running and encrypted, and the client as a bare `400 Bad Request` with the real
-reason wrapped inside it.
+- **The one that dials.** A charging station judges the server of a `wss://`
+  connection as it judges every server it connects to: is the certificate issued
+  for the name it dialled, and does its chain end at a root the machine trusts —
+  *or* at a TLS root of the station's own certificate store kept for `ocpp`, or
+  at one of the roots the connection names. A local controller judges its CSMS
+  the same way, against the TLS roots of its own store. The OCPP root is
+  imported into both at every start, so it is believed by these two, for this,
+  and by nobody else.
+- **The one that listens.** The CSMS and the local controller present their
+  certificate and the server CA that signed it. .NET builds the chain of a
+  server's own certificate before it will present one, but that chain only has
+  to be *buildable*, not trusted. Whether it can be presented is asked at every
+  start and said on the console, rather than found out in a handshake.
 
-Putting a root into somebody's certificate store is not something a test
-environment should do while they are looking the other way. So the certificates
-for profile 2 are minted and in place, `--ocpp-tls` turns them on, and the
-console prints the one command that is still needed:
+`AuthorizeTests` goes one step further, to security profile 3, with an
+operator's CA made in memory: it signs the CSMS's server certificate and the
+station's client certificate, the CSMS is told to believe the stations that CA
+vouches for, the station keeps the CA as a TLS root for `ocpp`, and the test
+asserts that the CSMS was believed through that root and no other.
 
-```
-certutil -addstore -user Root "…\data\pki\ocpp\ocpp_root_trust.pem"       # Windows, no administrator needed
-sudo cp …/ocpp_root_trust.pem /usr/local/share/ca-certificates/ocpp-test-root.crt && sudo update-ca-certificates
-sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain …/ocpp_root_trust.pem
-```
-
-The V2G side needs none of this: the vehicle is given the V2G roots as a file
-and checks the station's chain against those, which is what ISO 15118 asks for
-and is why that half works out of the box.
+The V2G side works the same way: the vehicle is given the V2G roots into its
+own store and checks the station's chain against those, which is what ISO 15118
+asks for.
 
 
 ### How far a charging session gets
