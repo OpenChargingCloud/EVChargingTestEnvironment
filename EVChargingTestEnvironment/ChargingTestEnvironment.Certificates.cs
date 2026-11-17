@@ -26,7 +26,7 @@ using cloud.charging.open.protocols.WWCP.Node.Certificates;
 
 using Vehicle       = cloud.charging.open.EV.EV;
 using CSMSStore     = cloud.charging.open.CSMS.OCPP;
-using ControlStore  = cloud.charging.open.LocalController.OCPP;
+using ControlStore  = cloud.charging.open.protocols.OCPP.Node.Serving;
 
 #endregion
 

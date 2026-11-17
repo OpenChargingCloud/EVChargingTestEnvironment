@@ -30,7 +30,7 @@ using cloud.charging.open.protocols.WWCP.Node.Configuration;
 using cloud.charging.open.protocols.WWCP.Node.TestKit;
 
 using cloud.charging.open.protocols.OCPP.Node.Connections;
-using cloud.charging.open.LocalController.OCPP;
+using cloud.charging.open.protocols.OCPP.Node.Serving;
 
 using WWCPNode    = cloud.charging.open.protocols.WWCP.Node.WWCPNode;
 using Management  = cloud.charging.open.CSMS.CSMS;

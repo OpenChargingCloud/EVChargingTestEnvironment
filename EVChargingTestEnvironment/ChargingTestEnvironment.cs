@@ -958,7 +958,7 @@ namespace cloud.charging.open.TestEnvironment
                                      );
 
                 if (!controllerFile.TryMergeSection(
-                         ControlConfig.OCPPServerConfiguration.SectionName,
+                         protocols.OCPP.Node.Serving.OCPPServerConfiguration.SectionName,
                          new JObject(
                              new JProperty("enabled",      true),
                              new JProperty("address",      Options.Address.ToString()),
