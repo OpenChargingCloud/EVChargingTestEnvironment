@@ -269,7 +269,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             Assert.That(localController.Node.Id.ToString(), Is.EqualTo(ControllerId));
 
-            Assert.That(localController.CSMSLogin.    TrySetPassword(ControllerId, UplinkPassword, out var uplinkError),                     Is.True, uplinkError);
+            Assert.That(localController.TrySetUplinkPassword(ControllerId, UplinkPassword, out var uplinkError),                     Is.True, uplinkError);
             Assert.That(localController.StationLogins.TrySetPassword(StationId,    StationPassword, null, "tests", out _, out var loginError), Is.True, loginError);
 
             return localController;

@@ -178,8 +178,7 @@ namespace cloud.charging.open.TestEnvironment
                 if (!CSMS.StationLogins.TrySetLocalController(ControllerNodeId, true, out var markError))
                     throw new InvalidOperationException($"CSMS: '{ControllerNodeId}' could not be marked as a local controller: {markError}");
 
-                if (!Controller.CSMSLogin.TrySetPassword(ControllerNodeId, controllerSecret, out var loginError))
-                    throw new InvalidOperationException($"The local controller could not be given its CSMS login: {loginError}");
+                DialTheCSMS(controllerSecret);
 
             }
 
@@ -499,27 +498,46 @@ namespace cloud.charging.open.TestEnvironment
         private void EnsureClientCertificate()
         {
 
-            if (Station.ClientCertificates.InUse is not null)
-                return;
+            // A TLS identity of the station's certificate store, which is
+            // where a station keeps who it is to a back end it dials. One of a
+            // station of before, kept in ocpp-client-keys/, was moved there at
+            // its first start and is found here like one made here.
+            var subject = $"CN={StationNodeId}, O=EV Charging Test Environment, C=DE";
 
-            if (!Station.ClientCertificates.TryCreateKey(
-                     $"CN={StationNodeId}, O=EV Charging Test Environment, C=DE",
+            if (Station.Certificates.UsableByKind(CertificateKind.TLSIdentity).
+                                     Any(identity => identity.HasPrivateKey &&
+                                                     identity.Subject.Contains($"CN={StationNodeId}", StringComparison.Ordinal)))
+            {
+                return;
+            }
+
+            if (!Station.Certificates.TryCreateRequest(
+                     CertificateKind.TLSIdentity,
+                     subject,
                      null,
-                     out _,
-                     out var csr,
-                     out var keyError))
+                     null,
+                     null,
+                     null,
+                     out var request,
+                     out var keyError,
+                     out _))
             {
                 throw new InvalidOperationException($"The station's client key could not be made: {keyError}");
             }
 
-            if (!Station.ClientCertificates.TryAddCertificate(
-                     Certificates.OCPP.SignClient(csr),
+            if (!Station.Certificates.TryAnswerRequest(
+                     Certificates.OCPP.SignClient(request.CSR),
+                     out var identity,
                      out _,
                      out var warnings,
-                     out var certError))
+                     out var certError,
+                     out _))
             {
                 throw new InvalidOperationException($"The station's signed client certificate was refused: {certError}");
             }
+
+            if (identity is null)
+                Console.Say("station", "Client certificate: kept beside its key, and cannot be held up by this runtime.");
 
             foreach (var warning in warnings)
                 Console.Say("station", $"Client certificate: {warning}");
@@ -647,6 +665,70 @@ namespace cloud.charging.open.TestEnvironment
                      out var connectionError))
             {
                 throw new InvalidOperationException($"The station could not be told where to dial: {connectionError}");
+            }
+
+        }
+
+        #endregion
+
+        #region (private) DialTheCSMS(Secret)
+
+        /// <summary>
+        /// The line of the local controller up to the CSMS: a connection of
+        /// its store, as the station's line is one of the station's.
+        /// </summary>
+        /// <remarks>
+        /// Replaced at every start for the reason <see cref="DialUpwards"/>
+        /// gives. A controller whose store was still empty took the line of
+        /// its configuration file of before over into the store, as "CSMS",
+        /// with the password of before: that one goes too, or the controller
+        /// would dial its CSMS twice.
+        /// </remarks>
+        private void DialTheCSMS(String Secret)
+        {
+
+            if (Controller is null)
+                return;
+
+            const String description = "The CSMS of this test environment";
+
+            foreach (var existing in Controller.Connections.Connections.
+                                                Where(one => one.Description == description ||
+                                                             one.Description == "CSMS").
+                                                ToArray())
+            {
+                Controller.Connections.TryRemoveConnection(existing.Id, out _);
+            }
+
+            foreach (var existing in Controller.Connections.Authentications.
+                                                Where(one => one.Description == description).
+                                                ToArray())
+            {
+                Controller.Connections.TryRemoveAuthentication(existing.Id, out _);
+            }
+
+            if (!Controller.Connections.TryAddAuthentication(
+                     description,
+                     "basic",
+                     ControllerNodeId,
+                     Secret,
+                     out var authenticationId,
+                     out var authenticationError))
+            {
+                throw new InvalidOperationException($"The local controller's credentials could not be written down: {authenticationError}");
+            }
+
+            if (!Controller.Connections.TryAddConnection(
+                     description,
+                     $"{options.OCPPScheme}://{options.Host}:{options.CSMSOCPPPort}",
+                     "csms",
+                     AutoConnect:       true,
+                     AuthenticationId:  authenticationId,
+                     CertificateId:     null,
+                     out _,
+                     out var connectionError))
+            {
+                throw new InvalidOperationException($"The local controller could not be told where to report: {connectionError}");
             }
 
         }

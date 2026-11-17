@@ -1,37 +1,59 @@
 <Solution>
-  <Folder Name="/Dependencies/">
-    <Project Path="libs/EV/EV/EV.csproj" Id="e1841eae-4155-4d8a-8dd6-58388d9ecc22" />
-    <Project Path="libs/EV/EVTests/EVTests.csproj" Id="c857cd70-a9db-466c-8bc0-211d7db97b48" />
-  </Folder>
-  <Folder Name="/Dependencies/ChargingStation/">
-    <Project Path="libs/ChargingStation/ChargingStation/ChargingStation.csproj" />
-    <Project Path="libs/ChargingStation/ChargingStationTests/ChargingStationTests.csproj" />
-  </Folder>
-  <Folder Name="/Dependencies/LocalController/">
-    <Project Path="libs/LocalController/LocalController/LocalController.csproj" />
-    <Project Path="libs/LocalController/LocalControllerTests/LocalControllerTests.csproj" />
-  </Folder>
-  <Folder Name="/Dependencies/CSMS/">
-    <Project Path="libs/CSMS/CSMS/CSMS.csproj" />
-    <Project Path="libs/CSMS/CSMSTests/CSMSTests.csproj" />
-  </Folder>
-  <Folder Name="/Dependencies/EMSP/">
-    <Project Path="libs/EMSP/EMSP/EMSP.csproj" />
-    <Project Path="libs/EMSP/EMSPTests/EMSPTests.csproj" />
-  </Folder>
+  <Folder Name="/Dependencies/" />
   <Folder Name="/Dependencies/OCPI/">
     <Project Path="libs/WWCP_OCPI/WWCP_OCPIv2.1.1/WWCP_OCPIv2.1.1.csproj" />
     <Project Path="libs/WWCP_OCPI/WWCP_OCPIv2.2.1/WWCP_OCPIv2.2.1.csproj" />
     <Project Path="libs/WWCP_OCPI/WWCP_OCPIv2.3.0/WWCP_OCPIv2.3.0.csproj" />
     <Project Path="libs/WWCP_OCPI/WWCP_OCPI_Common/WWCP_OCPI_Common.csproj" />
   </Folder>
-  <Folder Name="/Dependencies/Gateway/">
+  <Folder Name="/Dependencies/Entities/" />
+  <Folder Name="/Dependencies/Entities/ChargingStation/">
+    <Project Path="libs/ChargingStation/ChargingStation/ChargingStation.csproj" />
+    <Project Path="libs/ChargingStation/ChargingStationTests/ChargingStationTests.csproj" />
+  </Folder>
+  <Folder Name="/Dependencies/Entities/CSMS/">
+    <Project Path="libs/CSMS/CSMS/CSMS.csproj" />
+    <Project Path="libs/CSMS/CSMSTests/CSMSTests.csproj" />
+  </Folder>
+  <Folder Name="/Dependencies/Entities/EMSP/">
+    <Project Path="libs/EMSP/EMSP/EMSP.csproj" />
+    <Project Path="libs/EMSP/EMSPTests/EMSPTests.csproj" />
+  </Folder>
+  <Folder Name="/Dependencies/Entities/EV/">
+    <Project Path="libs/EV/EV/EV.csproj" Id="e1841eae-4155-4d8a-8dd6-58388d9ecc22" />
+    <Project Path="libs/EV/EVTests/EVTests.csproj" Id="c857cd70-a9db-466c-8bc0-211d7db97b48" />
+  </Folder>
+  <Folder Name="/Dependencies/Entities/Gateway/">
     <Project Path="libs/Gateway/Gateway/Gateway.csproj" Id="bfcc76cf-7e02-4770-bfde-c17ae53c5e86" />
     <Project Path="libs/Gateway/GatewayTests/GatewayTests.csproj" />
   </Folder>
-  <Folder Name="/Dependencies/RoamingHub/">
+  <Folder Name="/Dependencies/Entities/GridOperator/">
+    <Project Path="libs/GridOperator/GridOperator/GridOperator.csproj" />
+    <Project Path="libs/GridOperator/GridOperatorTests/GridOperatorTests.csproj" />
+  </Folder>
+  <Folder Name="/Dependencies/Entities/LocalController/">
+    <Project Path="libs/LocalController/LocalController/LocalController.csproj" />
+    <Project Path="libs/LocalController/LocalControllerTests/LocalControllerTests.csproj" />
+  </Folder>
+  <Folder Name="/Dependencies/Entities/ModbusTLSEnergyMeter/">
+    <Project Path="libs/ModbusTLSEnergyMeter/ModbusTLSEnergyMeter/ModbusTLSEnergyMeter.csproj" />
+    <Project Path="libs/ModbusTLSEnergyMeter/ModbusTLSEnergyMeterTests/ModbusTLSEnergyMeterTests.csproj" />
+  </Folder>
+  <Folder Name="/Dependencies/Entities/NTSServer/">
+    <Project Path="libs/NTSServer/NTSServer/NTSServer.csproj" />
+    <Project Path="libs/NTSServer/NTSServerTests/NTSServerTests.csproj" />
+  </Folder>
+  <Folder Name="/Dependencies/Entities/PKI/">
+    <Project Path="libs/PKI/PKI/PKI.csproj" />
+    <Project Path="libs/PKI/PKITests/PKITests.csproj" />
+  </Folder>
+  <Folder Name="/Dependencies/Entities/RoamingHub/">
     <Project Path="libs/RoamingHub/RoamingHub/RoamingHub.csproj" Id="e47b7b04-9479-4b33-8898-2031b6ba8e3b" />
     <Project Path="libs/RoamingHub/RoamingHubTests/RoamingHubTests.csproj" Id="9eda9488-80de-41eb-af89-a3a58a33b2e5" />
+  </Folder>
+  <Folder Name="/Dependencies/Entities/SmartPhone/">
+    <Project Path="libs/Smartphone/Smartphone/Smartphone.csproj" />
+    <Project Path="libs/Smartphone/SmartphoneTests/SmartphoneTests.csproj" />
   </Folder>
   <Folder Name="/Dependencies/ISO15118/">
     <Project Path="libs/WWCP_ISO15118/WWCP_ISO15118_2/WWCP_ISO15118_2.csproj" />

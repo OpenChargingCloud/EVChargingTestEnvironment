@@ -61,3 +61,18 @@
 [submodule "libs/WWCP_OpenADR"]
 	path = libs/WWCP_OpenADR
 	url = https://github.com/OpenChargingCloud/WWCP_OpenADR.git
+[submodule "libs/GridOperator"]
+	path = libs/GridOperator
+	url = https://github.com/OpenChargingCloud/GridOperator
+[submodule "libs/PKI"]
+	path = libs/PKI
+	url = https://github.com/OpenChargingCloud/PKI.git
+[submodule "libs/Smartphone"]
+	path = libs/Smartphone
+	url = https://github.com/OpenChargingCloud/Smartphone.git
+[submodule "libs/ModbusTLSEnergyMeter"]
+	path = libs/ModbusTLSEnergyMeter
+	url = https://github.com/OpenChargingCloud/ModbusTLSEnergyMeter.git
+[submodule "libs/NTSServer"]
+	path = libs/NTSServer
+	url = https://github.com/OpenChargingCloud/NTSServer.git

@@ -16,9 +16,16 @@
          objects in one process. -->
     <ProjectReference Include="..\libs\EV\EV\EV.csproj" />
     <ProjectReference Include="..\libs\ChargingStation\ChargingStation\ChargingStation.csproj" />
+    <ProjectReference Include="..\libs\Gateway\Gateway\Gateway.csproj" />
+    <ProjectReference Include="..\libs\GridOperator\GridOperator\GridOperator.csproj" />
     <ProjectReference Include="..\libs\LocalController\LocalController\LocalController.csproj" />
     <ProjectReference Include="..\libs\CSMS\CSMS\CSMS.csproj" />
     <ProjectReference Include="..\libs\EMSP\EMSP\EMSP.csproj" />
+    <ProjectReference Include="..\libs\ModbusTLSEnergyMeter\ModbusTLSEnergyMeter\ModbusTLSEnergyMeter.csproj" />
+    <ProjectReference Include="..\libs\NTSServer\NTSServer\NTSServer.csproj" />
+    <ProjectReference Include="..\libs\PKI\PKI\PKI.csproj" />
+    <ProjectReference Include="..\libs\RoamingHub\RoamingHub\RoamingHub.csproj" />
+    <ProjectReference Include="..\libs\Smartphone\Smartphone\Smartphone.csproj" />
 
     <ProjectReference Include="..\libs\Styx\Styx\Styx.csproj" />
     <ProjectReference Include="..\libs\Hermod\Hermod\Hermod.csproj" />

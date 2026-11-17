@@ -262,11 +262,11 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
                              Assert.That(localController.Node.Id.ToString(), Is.EqualTo(ControllerId));
 
-                             Assert.That(localController.CSMSLogin.TrySetPassword(ControllerId, UplinkPassword, out var uplinkError),          Is.True, uplinkError);
-                             Assert.That(localController.CSMSPins. TrySetTrust(new ServerKeyPinSettings(null, "Key", null), out var trustError), Is.True, trustError);
+                             Assert.That(localController.TrySetUplinkPassword(ControllerId, UplinkPassword, out var uplinkError),          Is.True, uplinkError);
+                             Assert.That(localController.TrySetUplinkKeyPinTrust(new ServerKeyPinSettings(null, "Key", null), out var trustError), Is.True, trustError);
 
                              if (PinSetSigner is not null)
-                                 Assert.That(localController.CSMSPins.TryAddPinSetSigner(PinSetSigner, "The CSMS", out var signerError), Is.True, signerError);
+                                 Assert.That(localController.TryAddUplinkPinSetSigner(PinSetSigner, "The CSMS", out var signerError), Is.True, signerError);
 
                              return localController;
 
@@ -275,7 +275,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
         }
 
         private IPinnedTLSEndpoint? Uplink
-            => LC.CSMSPins.Secure.FirstOrDefault();
+            => LC.Uplink();
 
         #endregion
 
@@ -381,7 +381,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
                           Sent:     CSMS.KeyPins.Get(ControllerId)?.Uplink?.Sent);
 
             Assert.That(CSMS.PinSetSigner.TryCreate("uplink tests", out var signer, out var signerError), Is.True, signerError);
-            Assert.That(LC.CSMSPins.TryAddPinSetSigner(signer!, "The CSMS", out var addError),            Is.True, addError);
+            Assert.That(LC.TryAddUplinkPinSetSigner(signer!, "The CSMS", out var addError),            Is.True, addError);
 
             using var somebodyElses = ECDsa.Create(ECCurve.NamedCurves.nistP256);
             var other               = KeyPin.FromKey(somebodyElses);

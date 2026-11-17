@@ -508,8 +508,10 @@ namespace cloud.charging.open.TestEnvironment.Tests
                     // A key of the station's own, and for it a certificate of
                     // the operator's CA that names the station: that name is
                     // who the CSMS takes it for.
-                    Assert.That(station.ClientCertificates.TryCreateKey(Login, null, out var keyId, out var csr, out error), Is.True, error);
-                    Assert.That(station.ClientCertificates.TryAddCertificate(SignedByTheOperatorsCA(csr!), out _, out _, out error), Is.True, error);
+                    Assert.That(station.Certificates.TryCreateRequest(CertificateKind.TLSIdentity, Login, null, null, null, null, out var request, out error, out _), Is.True, error);
+                    Assert.That(station.Certificates.TryAnswerRequest(SignedByTheOperatorsCA(request!.CSR), out var identity, out _, out _, out error, out _), Is.True, error);
+                    Assert.That(identity, Is.Not.Null, "the signed certificate could not be put together with its key");
+                    var keyId = identity!.Id;
 
                     // The CSMS is believed because the operator's CA is a TLS
                     // root of the station's own store, kept for OCPP - the
@@ -604,7 +606,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
                                       );
 
                 Assert.That(localController.Node.Id.ToString(), Is.EqualTo(ControllerId));
-                Assert.That(localController.CSMSLogin.TrySetPassword(ControllerId, UplinkPassword, out var loginError), Is.True, loginError);
+                Assert.That(localController.TrySetUplinkPassword(ControllerId, UplinkPassword, out var loginError), Is.True, loginError);
 
                 return localController;
 

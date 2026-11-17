@@ -975,16 +975,17 @@ namespace cloud.charging.open.TestEnvironment
                          ControlConfig.CSMSConfiguration.SectionName,
                          new JObject(
                              new JProperty("enabled",          true),
-                             new JProperty("url",              $"{Options.OCPPScheme}://{Options.Host}:{Options.CSMSOCPPPort}"),
 
-                             // The same decision as the port above it, and it
-                             // has to be the same one: a controller that dials
-                             // ws:// at a port listening for wss:// is answered
-                             // with a corrupted frame, and one that dials wss://
-                             // at a plain port waits for a handshake nobody is
-                             // going to make. See TestEnvironmentOptions.OCPPTLS
-                             // for why this is off unless it is asked for.
-                             new JProperty("securityProfile",  Options.OCPPSecurityProfile),
+                             // Where it reports to is not said here any more:
+                             // the line up is a connection of the controller's
+                             // store, given to it with its password once the
+                             // passwords are made (DialTheCSMS). Its scheme is
+                             // the same decision as the port above, and has to
+                             // be: a controller that dials ws:// at a port
+                             // listening for wss:// is answered with a
+                             // corrupted frame, and one that dials wss:// at a
+                             // plain port waits for a handshake nobody is going
+                             // to make.
                              new JProperty("nextHopNodeId",    "CSMS")
                          ),
                          out var upstreamError))
