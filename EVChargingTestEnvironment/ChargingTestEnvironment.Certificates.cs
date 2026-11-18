@@ -112,7 +112,7 @@ namespace cloud.charging.open.TestEnvironment
             {
 
                 controllerServes = EnsureServerCertificate(
-                                       Controller.ServerCertificates,
+                                       Controller,
                                        $"CN=lc.test.local, O=EV Charging Test Environment, C=DE",
                                        [ options.Host, "localhost", "lc.test.local" ],
                                        "LC"
@@ -414,25 +414,40 @@ namespace cloud.charging.open.TestEnvironment
 
         #endregion
 
-        #region (private) EnsureServerCertificate(Store, ...) - the local controller's store, which is a different type
+        #region (private) EnsureServerCertificate(Node, Subject, ReachableAs, Whose) - the local controller's station port
 
         /// <summary>
-        /// The same again for the local controller, whose certificate store is
-        /// the same forty lines in a namespace of its own.
+        /// The same again for the local controller, whose station port shows
+        /// a TLS server identity of the node's own certificate store: one told
+        /// the listener "ocpp".
         /// </summary>
-        private Boolean EnsureServerCertificate(ControlStore.ServerCertificateStore  Store,
-                                                String                               Subject,
-                                                IEnumerable<String>                  ReachableAs,
-                                                String                               Whose)
+        /// <remarks>
+        /// Left alone where the store already holds one for that listener -
+        /// from an earlier start, or a server key a test made there first.
+        /// </remarks>
+        private Boolean EnsureServerCertificate(protocols.OCPP.Node.OCPPServingNode  Node,
+                                                String                        Subject,
+                                                IEnumerable<String>           ReachableAs,
+                                                String                        Whose)
         {
 
-            if (!Store.HasCertificate)
+            var listener = protocols.OCPP.Node.OCPPServingNode.StationListener;
+
+            if (Node.Certificates.UsableFor(CertificateKind.TLSServerIdentity, listener).Count == 0)
             {
 
-                if (!Store.TryCreateKey(Subject, ReachableAs, null, out _, out var csr, out var keyError))
-                    throw new InvalidOperationException($"{Whose}: a server key could not be made: {keyError}");
+                if (!Node.Certificates.TryCreateRequest(CertificateKind.TLSServerIdentity,
+                                                        Subject,
+                                                        null,
+                                                        new CertificateRequestAsks(ReachableAs: [.. ReachableAs]),
+                                                        [ listener ],
+                                                        null,
+                                                        out var request,
+                                                        out var requestError,
+                                                        out _))
+                    throw new InvalidOperationException($"{Whose}: a server key could not be made: {requestError}");
 
-                if (!Store.TryAddCertificate(Certificates.OCPP.SignServer(csr), ReachableAs, out _, out var warnings, out var certError))
+                if (!Node.Certificates.TryAnswerRequest(Certificates.OCPP.SignServer(request.CSR), out _, out _, out var warnings, out var certError, out _))
                     throw new InvalidOperationException($"{Whose}: the signed server certificate was refused: {certError}");
 
                 foreach (var warning in warnings)
@@ -440,7 +455,7 @@ namespace cloud.charging.open.TestEnvironment
 
             }
 
-            return Store.Select()?.TryCreateContext(out _, out _) == true;
+            return Node.ListenerCertificates.For(listener, "the charging station port").Current?.TryCreateContext(out _, out _) == true;
 
         }
 

@@ -115,11 +115,20 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             // Before the controller is built: whether its station port speaks
             // TLS at all is decided when it starts.
-            using (var store = new ServerCertificateStore(Path.Combine(controllerDirectory, ServerCertificateStore.DefaultDirectoryName)))
-            {
-                Assert.That(store.TryCreateServerKey(null, AsNext: false, out _, out var current, out var keyError), Is.True, keyError);
-                currentPin = current!;
-            }
+            // The station port is the listener "ocpp" of the node's store,
+            // "certificates" beside the controller's configuration file.
+            var store = new protocols.WWCP.Node.Certificates.CertificateStore(
+                            Path.Combine(controllerDirectory, CertificatesConfiguration.DefaultDirectory),
+                            new protocols.WWCP.Node.Logging.EventLog(),
+                            NodeName:      "local controller",
+                            Listeners:     [ protocols.OCPP.Node.OCPPServingNode.StationListener ],
+                            RequestKinds:  [ protocols.WWCP.Node.Certificates.CertificateKind.TLSServerIdentity ]
+                        );
+
+            store.Reload();
+
+            Assert.That(store.TryCreateServerKey(protocols.OCPP.Node.OCPPServingNode.StationListener, null, AsNext: false, out var current, out var keyError), Is.True, keyError);
+            currentPin = current!.KeyPin;
 
             controller  = await TestPorts.StartedOnFreshPorts(() => NewController(controllerDirectory));
 
@@ -474,7 +483,8 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             var (station, connection) = await AConfirmedStation();
 
-            Assert.That(LC.ServerCertificates.TryCreateServerKey(null, AsNext: true, out _, out var next, out var nextError), Is.True, nextError);
+            Assert.That(LC.Certificates.TryCreateServerKey(protocols.OCPP.Node.OCPPServingNode.StationListener, null, AsNext: true, out var nextKey, out var nextError), Is.True, nextError);
+            var next = nextKey!.KeyPin;
 
             #region The rollover, the station's connection watched throughout
 
@@ -519,7 +529,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
                 // Confirmed is what a pin set that confirmed a learned pin left;
                 // the rollover's pin sets confirm nothing, they configure.
                 Assert.That(entry.ServerKeyPinState,                             Is.EqualTo(KeyPinState.Configured));
-                Assert.That(LC.ServerCertificates.CurrentKey?.KeyPin.ToHex(),    Is.EqualTo(next.ToHex()), "the controller was not switched");
+                Assert.That(LC.Certificates.GetCurrentAndNextKey(protocols.OCPP.Node.OCPPServingNode.StationListener, out _)?.KeyPin.ToHex(), Is.EqualTo(next.ToHex()), "the controller was not switched");
                 Assert.That(drops,                                               Is.Zero, "the station lost its connection during the rollover");
                 Assert.That(IsConnected(station, connection),                    Is.True);
             });

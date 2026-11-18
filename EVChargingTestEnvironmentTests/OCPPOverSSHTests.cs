@@ -778,7 +778,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             var (station, connection) = await AStationDialling("cs001", PinsNothing: true);
 
-            await Until(() => StatusOf(station, connection) == ConnectionStatus.NotDialled, "Not dialling with no host key pinned", station);
+            await Until(() => StatusOf(station, connection) == ConnectionStatus.NotConnected, "Not dialling with no host key pinned", station);
 
             var entry = station.Connections.Connections.Single();
 
