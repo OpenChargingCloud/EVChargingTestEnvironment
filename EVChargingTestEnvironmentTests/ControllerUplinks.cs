@@ -19,8 +19,8 @@
 
 using Newtonsoft.Json.Linq;
 
-using cloud.charging.open.protocols.OCPP.Node.Connections;
-using cloud.charging.open.protocols.OCPP.Node.KeyPins;
+using cloud.charging.open.protocols.WWCP.Node.Connections;
+using cloud.charging.open.protocols.WWCP.Node.KeyPins;
 
 using Controller = cloud.charging.open.LocalController.LocalController;
 
