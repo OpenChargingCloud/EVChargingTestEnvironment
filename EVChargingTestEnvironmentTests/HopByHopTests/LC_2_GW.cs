@@ -46,18 +46,18 @@ using org.GraphDefined.Vanaheimr.Illias;
 
 #endregion
 
-namespace cloud.charging.open.TestEnvironment.Tests.Connections
+namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 {
 
     [TestFixture]
-    public class LC_2_CSMS : ATestsBase
+    public class LC_2_GW : AHopByHopTest
     {
 
         #region Data
 
         private DNSClient?                       dnsClient;
         private LocalController.LocalController? localController;
-        private CSMS.CSMS?                       csms;
+        private Gateway.Gateway?                 gateway;
 
 
         private const           String    KnownCard       = "04A2B3C4D5E6F7";
@@ -90,18 +90,18 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
             await localController.Start();
 
 
-            var csmsDirectory  = NewServedNodeDirectory("csms");
+            var gwDirectory    = NewServedNodeDirectory("gw");
 
-            csms             = new CSMS.CSMS(
+            gateway          = new Gateway.Gateway(
                                    DNSClient:        dnsClient,
                                    HTTPPort:         IPPort.Parse(TestPorts.Free()),
-                                   AccountsPath:     csmsDirectory.Accounts,
-                                   ConfigFile:       csmsDirectory.ConfigFile,
+                                   AccountsPath:     gwDirectory.Accounts,
+                                   ConfigFile:       gwDirectory.ConfigFile,
                                    LogToConsole:     false,
                                    BridgeDebugLog:   false
                                );
 
-            await csms.Start();
+            await gateway.Start();
 
         }
 
@@ -115,10 +115,10 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
                 await localController.DisposeAsync();
             }
 
-            if (csms is not null)
+            if (gateway is not null)
             {
-                await csms.Stop();
-                await csms.DisposeAsync();
+                await gateway.Stop();
+                await gateway.DisposeAsync();
             }
 
         }
@@ -126,16 +126,16 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
         #endregion
 
 
-        #region LC_to_CSMS_viaWS(Transport, Authentication)
+        #region LC_to_GW_viaWS(Transport, Authentication)
 
         /// <summary>
-        /// The local controller dials the CSMS, under its own name: what it
-        /// sends in the overlay network comes from it. That it reports
-        /// upwards at all its file says, in the section "csms".
+        /// The local controller dials the gateway and is let in. Whether it is accepted is
+        /// for the CSMS above the gateway to say, and there is none here: so it
+        /// is the line, at both its ends, that is tested.
         /// </summary>
         [TestCase("ws", "basic")]
-        public async Task LC_to_CSMS_viaWS(String  Transport,
-                                           String  Authentication)
+        public async Task LC_to_GW_viaWS(String  Transport,
+                                         String  Authentication)
         {
 
             if (localController is null)
@@ -144,29 +144,25 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
                 return;
             }
 
-            if (csms is null)
+            if (gateway is null)
             {
-                Assert.Fail("The CSMS is not running!");
+                Assert.Fail("The gateway is not running!");
                 return;
             }
 
 
             var login        = localController.Node.Id.ToString();
-            var description  = $"{localController.OCPP.NodeId} --({Transport}/{Authentication})--> {csms.OCPP.NodeId}";
+            var description  = $"{localController.OCPP.NodeId} --({Transport}/{Authentication})--> {gateway.OCPP.NodeId}";
 
-            var credentials  = Credentials(localController, csms, login, Authentication, description);
+            var credentials  = Credentials(localController, gateway, login, Authentication, description);
 
             BelievesTheTestCA(localController);
-
-            // In the overlay network what the local controller sends in its own
-            // name is taken only from a login marked as one of its kind.
-            Assert.That(csms.WebSocketLogins.TrySetLocalController(login, true, out var markError), Is.True, markError);
 
             Assert.That(
                 localController.Connections.TryAddConnection(
                      description,
-                     $"{Transport}://{login}@127.0.0.1:{csms.OCPPServerSettings.TCPPort}",
-                     "CSMS",
+                     $"{Transport}://{login}@127.0.0.1:{gateway.OCPPServerSettings.TCPPort}",
+                     "Gateway",
                      true,
                      credentials,
                      null,
@@ -176,8 +172,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
                 Is.True, error
             );
 
-            await Until(() => StatusOf(localController, connection!) == ConnectionStatus.Connected, $"'{login}' connecting over {Transport}", localController, csms);
-            await Until(() => RegistrationOf(localController) == "Accepted",                       $"'{login}' being accepted by the CSMS", localController, csms);
+            await Until(() => StatusOf(localController, connection!) == ConnectionStatus.Connected, $"'{login}' connecting over {Transport}", localController, gateway);
+            await Until(() => IsConnectedAt(gateway, login),                              $"'{login}' being let in by the gateway", localController, gateway);
 
 
             //var station = await AStationAtTheCSMS(Transport, "cs001");

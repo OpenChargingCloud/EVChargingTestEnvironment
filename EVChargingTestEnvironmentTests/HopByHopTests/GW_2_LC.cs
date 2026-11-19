@@ -46,18 +46,18 @@ using org.GraphDefined.Vanaheimr.Illias;
 
 #endregion
 
-namespace cloud.charging.open.TestEnvironment.Tests.Connections
+namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 {
 
     [TestFixture]
-    public class LC_2_GW : ATestsBase
+    public class GW_2_LC : AHopByHopTest
     {
 
         #region Data
 
         private DNSClient?                       dnsClient;
-        private LocalController.LocalController? localController;
         private Gateway.Gateway?                 gateway;
+        private LocalController.LocalController? localController;
 
 
         private const           String    KnownCard       = "04A2B3C4D5E6F7";
@@ -76,21 +76,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
                                    SearchForIPv6DNSServers: false
                                );
 
-            var lcDirectory    = NewNodeDirectory("lc", ReportsUpwards());
-
-            localController  = new LocalController.LocalController(
-                                   DNSClient:        dnsClient,
-                                   HTTPPort:         IPPort.Parse(TestPorts.Free()),
-                                   AccountsPath:     lcDirectory.Accounts,
-                                   ConfigFile:       lcDirectory.ConfigFile,
-                                   LogToConsole:     false,
-                                   BridgeDebugLog:   false
-                               );
-
-            await localController.Start();
-
-
-            var gwDirectory    = NewServedNodeDirectory("gw");
+            var gwDirectory    = NewNodeDirectory("gw");
 
             gateway          = new Gateway.Gateway(
                                    DNSClient:        dnsClient,
@@ -103,17 +89,25 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
 
             await gateway.Start();
 
+
+            var lcDirectory    = NewServedNodeDirectory("lc");
+
+            localController  = new LocalController.LocalController(
+                                   DNSClient:        dnsClient,
+                                   HTTPPort:         IPPort.Parse(TestPorts.Free()),
+                                   AccountsPath:     lcDirectory.Accounts,
+                                   ConfigFile:       lcDirectory.ConfigFile,
+                                   LogToConsole:     false,
+                                   BridgeDebugLog:   false
+                               );
+
+            await localController.Start();
+
         }
 
         [TearDown]
         public async Task Stop()
         {
-
-            if (localController is not null)
-            {
-                await localController.Stop();
-                await localController.DisposeAsync();
-            }
 
             if (gateway is not null)
             {
@@ -121,28 +115,28 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
                 await gateway.DisposeAsync();
             }
 
+            if (localController is not null)
+            {
+                await localController.Stop();
+                await localController.DisposeAsync();
+            }
+
         }
 
         #endregion
 
 
-        #region LC_to_GW_viaWS(Transport, Authentication)
+        #region GW_to_LC_viaWS(Transport, Authentication)
 
         /// <summary>
-        /// The local controller dials the gateway and is let in. Whether it is accepted is
-        /// for the CSMS above the gateway to say, and there is none here: so it
+        /// The gateway dials the local controller and is let in. Whether it is accepted is
+        /// for the CSMS above the local controller to say, and there is none here: so it
         /// is the line, at both its ends, that is tested.
         /// </summary>
         [TestCase("ws", "basic")]
-        public async Task LC_to_GW_viaWS(String  Transport,
+        public async Task GW_to_LC_viaWS(String  Transport,
                                          String  Authentication)
         {
-
-            if (localController is null)
-            {
-                Assert.Fail("The local controller is not running!");
-                return;
-            }
 
             if (gateway is null)
             {
@@ -150,19 +144,25 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
                 return;
             }
 
+            if (localController is null)
+            {
+                Assert.Fail("The local controller is not running!");
+                return;
+            }
 
-            var login        = localController.Node.Id.ToString();
-            var description  = $"{localController.OCPP.NodeId} --({Transport}/{Authentication})--> {gateway.OCPP.NodeId}";
 
-            var credentials  = Credentials(localController, gateway, login, Authentication, description);
+            var login        = "gw-" + RandomExtensions.RandomString(8);
+            var description  = $"{gateway.OCPP.NodeId} --({Transport}/{Authentication})--> {localController.OCPP.NodeId}";
 
-            BelievesTheTestCA(localController);
+            var credentials  = Credentials(gateway, localController, login, Authentication, description);
+
+            BelievesTheTestCA(gateway);
 
             Assert.That(
-                localController.Connections.TryAddConnection(
+                gateway.Connections.TryAddConnection(
                      description,
-                     $"{Transport}://{login}@127.0.0.1:{gateway.OCPPServerSettings.TCPPort}",
-                     "Gateway",
+                     $"{Transport}://{login}@127.0.0.1:{localController.OCPPServerSettings.TCPPort}",
+                     "LocalController",
                      true,
                      credentials,
                      null,
@@ -172,8 +172,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
                 Is.True, error
             );
 
-            await Until(() => StatusOf(localController, connection!) == ConnectionStatus.Connected, $"'{login}' connecting over {Transport}", localController, gateway);
-            await Until(() => IsConnectedAt(gateway, login),                              $"'{login}' being let in by the gateway", localController, gateway);
+            await Until(() => StatusOf(gateway, connection!) == ConnectionStatus.Connected, $"'{login}' connecting over {Transport}", gateway, localController);
+            await Until(() => IsConnectedAt(localController, login),                              $"'{login}' being let in by the local controller", gateway, localController);
 
 
             //var station = await AStationAtTheCSMS(Transport, "cs001");

@@ -46,18 +46,18 @@ using org.GraphDefined.Vanaheimr.Illias;
 
 #endregion
 
-namespace cloud.charging.open.TestEnvironment.Tests.Connections
+namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 {
 
     [TestFixture]
-    public class GW_2_CS : ATestsBase
+    public class LC_2_CSMS : AHopByHopTest
     {
 
         #region Data
 
         private DNSClient?                       dnsClient;
-        private Gateway.Gateway?                 gateway;
-        private ChargingStation.ChargingStation? chargingStation;
+        private LocalController.LocalController? localController;
+        private CSMS.CSMS?                       csms;
 
 
         private const           String    KnownCard       = "04A2B3C4D5E6F7";
@@ -76,33 +76,32 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
                                    SearchForIPv6DNSServers: false
                                );
 
-            var gwDirectory    = NewNodeDirectory("gw");
+            var lcDirectory    = NewNodeDirectory("lc", ReportsUpwards());
 
-            gateway          = new Gateway.Gateway(
+            localController  = new LocalController.LocalController(
                                    DNSClient:        dnsClient,
                                    HTTPPort:         IPPort.Parse(TestPorts.Free()),
-                                   AccountsPath:     gwDirectory.Accounts,
-                                   ConfigFile:       gwDirectory.ConfigFile,
+                                   AccountsPath:     lcDirectory.Accounts,
+                                   ConfigFile:       lcDirectory.ConfigFile,
                                    LogToConsole:     false,
                                    BridgeDebugLog:   false
                                );
 
-            await gateway.Start();
+            await localController.Start();
 
 
-            var csDirectory    = NewServedNodeDirectory("cs");
+            var csmsDirectory  = NewServedNodeDirectory("csms");
 
-            chargingStation  = new ChargingStation.ChargingStation(
+            csms             = new CSMS.CSMS(
                                    DNSClient:        dnsClient,
                                    HTTPPort:         IPPort.Parse(TestPorts.Free()),
-                                   NoKiosk:          true,
-                                   AccountsPath:     csDirectory.Accounts,
-                                   ConfigFile:       csDirectory.ConfigFile,
+                                   AccountsPath:     csmsDirectory.Accounts,
+                                   ConfigFile:       csmsDirectory.ConfigFile,
                                    LogToConsole:     false,
                                    BridgeDebugLog:   false
                                );
 
-            await chargingStation.Start();
+            await csms.Start();
 
         }
 
@@ -110,16 +109,16 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
         public async Task Stop()
         {
 
-            if (gateway is not null)
+            if (localController is not null)
             {
-                await gateway.Stop();
-                await gateway.DisposeAsync();
+                await localController.Stop();
+                await localController.DisposeAsync();
             }
 
-            if (chargingStation is not null)
+            if (csms is not null)
             {
-                await chargingStation.Stop();
-                await chargingStation.DisposeAsync();
+                await csms.Stop();
+                await csms.DisposeAsync();
             }
 
         }
@@ -127,45 +126,49 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
         #endregion
 
 
-        #region GW_to_CS_viaWS(Transport, Authentication)
+        #region LC_to_CSMS_viaWS(Transport, Authentication)
 
         /// <summary>
-        /// A gateway dials only upwards - its CSMS, a local controller
-        /// or a gateway above it (ConnectionRules.BackEnds) - and talks to
-        /// what dials it as the node above: the one node that dials a
-        /// charging station is the CSMS (ConnectionRules.NodesBelow). So
-        /// there is nothing here to test until a gateway can dial
-        /// downwards, see CSMS_2_CS.
+        /// The local controller dials the CSMS, under its own name: what it
+        /// sends in the overlay network comes from it. That it reports
+        /// upwards at all its file says, in the section "csms".
         /// </summary>
         [TestCase("ws", "basic")]
-        [Ignore("A gateway dials no charging station: only the CSMS dials downwards (ConnectionRules.NodesBelow).")]
-        public async Task GW_to_CS_viaWS(String  Transport,
-                                         String  Authentication)
+        public async Task LC_to_CSMS_viaWS(String  Transport,
+                                           String  Authentication)
         {
 
-            if (gateway is null)
+            if (localController is null)
             {
-                Assert.Fail("The gateway is not running!");
+                Assert.Fail("The local controller is not running!");
                 return;
             }
 
-            if (chargingStation is null)
+            if (csms is null)
             {
-                Assert.Fail("The charging station is not running!");
+                Assert.Fail("The CSMS is not running!");
                 return;
             }
 
 
-            var login        = "gw-" + RandomExtensions.RandomString(8);
-            var description  = $"{gateway.OCPP.NodeId} --({Transport}/{Authentication})--> {chargingStation.Id}";
+            var login        = localController.Node.Id.ToString();
+            var description  = $"{localController.OCPP.NodeId} --({Transport}/{Authentication})--> {csms.OCPP.NodeId}";
+
+            var credentials  = Credentials(localController, csms, login, Authentication, description);
+
+            BelievesTheTestCA(localController);
+
+            // In the overlay network what the local controller sends in its own
+            // name is taken only from a login marked as one of its kind.
+            Assert.That(csms.WebSocketLogins.TrySetLocalController(login, true, out var markError), Is.True, markError);
 
             Assert.That(
-                gateway.Connections.TryAddConnection(
+                localController.Connections.TryAddConnection(
                      description,
-                     $"{Transport}://{login}@127.0.0.1:{chargingStation.OCPPServerSettings.TCPPort}",
-                     "ChargingStation",
+                     $"{Transport}://{login}@127.0.0.1:{csms.OCPPServerSettings.TCPPort}",
+                     "CSMS",
                      true,
-                     Credentials(gateway, chargingStation, login, Authentication, description),
+                     credentials,
                      null,
                      out var connection,
                      out var error
@@ -173,7 +176,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
                 Is.True, error
             );
 
-            await Until(() => StatusOf(gateway, connection!) == ConnectionStatus.Connected, $"'{login}' connecting over {Transport}", gateway, chargingStation);
+            await Until(() => StatusOf(localController, connection!) == ConnectionStatus.Connected, $"'{login}' connecting over {Transport}", localController, csms);
+            await Until(() => RegistrationOf(localController) == "Accepted",                       $"'{login}' being accepted by the CSMS", localController, csms);
 
 
             //var station = await AStationAtTheCSMS(Transport, "cs001");

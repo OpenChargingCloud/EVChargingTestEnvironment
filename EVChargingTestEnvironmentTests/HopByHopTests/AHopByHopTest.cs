@@ -48,10 +48,10 @@ using org.GraphDefined.Vanaheimr.Illias;
 
 #endregion
 
-namespace cloud.charging.open.TestEnvironment.Tests.Connections
+namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 {
 
-    public abstract class ATestsBase
+    public abstract class AHopByHopTest
     {
 
         #region Data

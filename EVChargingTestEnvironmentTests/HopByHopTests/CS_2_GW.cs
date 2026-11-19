@@ -46,18 +46,18 @@ using org.GraphDefined.Vanaheimr.Illias;
 
 #endregion
 
-namespace cloud.charging.open.TestEnvironment.Tests.Connections
+namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 {
 
     [TestFixture]
-    public class CS_2_GW : ATestsBase
+    public class CS_2_GW : AHopByHopTest
     {
 
         #region Data
 
-        private DNSClient?                       dnsClient;
-        private ChargingStation.ChargingStation? chargingStation;
-        private Gateway.Gateway?                 gateway;
+        private DNSClient?                        dnsClient;
+        private ChargingStation.ChargingStation?  chargingStation;
+        private Gateway.Gateway?                  gateway;
 
 
         private const           String    KnownCard       = "04A2B3C4D5E6F7";
@@ -76,7 +76,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
                                    SearchForIPv6DNSServers: false
                                );
 
-            var csDirectory    = NewNodeDirectory("cs");
+            var csDirectory  = NewNodeDirectory("cs");
 
             chargingStation  = new ChargingStation.ChargingStation(
                                    DNSClient:        dnsClient,
@@ -91,7 +91,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
             await chargingStation.Start();
 
 
-            var gwDirectory    = NewServedNodeDirectory("gw");
+            var gwDirectory  = NewServedNodeDirectory("gw");
 
             gateway          = new Gateway.Gateway(
                                    DNSClient:        dnsClient,
@@ -105,6 +105,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
             await gateway.Start();
 
         }
+
 
         [TearDown]
         public async Task Stop()
@@ -134,7 +135,9 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
         /// for the CSMS above the gateway to say, and there is none here: so it
         /// is the line, at both its ends, that is tested.
         /// </summary>
-        [TestCase("ws", authPassword)]
+        [TestCase("ws",  authPassword)]
+        [TestCase("wss", authPassword)]
+        [TestCase("ws",  authTOTP)]
         [TestCase("wss", authTOTP)]
         public async Task CS_to_GW_viaWS(String  Transport,
                                          String  Authentication)

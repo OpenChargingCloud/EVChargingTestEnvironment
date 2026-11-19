@@ -34,30 +34,30 @@ using cloud.charging.open.protocols.WWCP.Node.Certificates;
 using cloud.charging.open.protocols.WWCP.Node.Configuration;
 using cloud.charging.open.protocols.WWCP.Node.TestKit;
 
-using cloud.charging.open.Gateway;
+using cloud.charging.open.ChargingStation;
 using cloud.charging.open.protocols.WWCP.Node.Connections;
 using cloud.charging.open.protocols.WWCP.Node.Logins;
 
 using WWCPNode    = cloud.charging.open.protocols.WWCP.Node.WWCPNode;
 //using Management  = cloud.charging.open.CSMS.CSMS;
-//using Controller  = cloud.charging.open.Gateway.Gateway;
-//using Station     = cloud.charging.open.Gateway.Gateway;
+//using Controller  = cloud.charging.open.LocalController.LocalController;
+//using Station     = cloud.charging.open.ChargingStation.ChargingStation;
 using org.GraphDefined.Vanaheimr.Illias;
 
 #endregion
 
-namespace cloud.charging.open.TestEnvironment.Tests.Connections
+namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 {
 
     [TestFixture]
-    public class CSMS_2_GW : ATestsBase
+    public class GW_2_CSMS : AHopByHopTest
     {
 
         #region Data
 
         private DNSClient?       dnsClient;
-        private CSMS.CSMS?       csms;
         private Gateway.Gateway? gateway;
+        private CSMS.CSMS?       csms;
 
 
         private const           String    KnownCard       = "04A2B3C4D5E6F7";
@@ -76,21 +76,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
                                    SearchForIPv6DNSServers: false
                                );
 
-            var csmsDirectory  = NewNodeDirectory("csms");
-
-            csms             = new CSMS.CSMS(
-                                   DNSClient:        dnsClient,
-                                   HTTPPort:         IPPort.Parse(TestPorts.Free()),
-                                   AccountsPath:     csmsDirectory.Accounts,
-                                   ConfigFile:       csmsDirectory.ConfigFile,
-                                   LogToConsole:     false,
-                                   BridgeDebugLog:   false
-                               );
-
-            await csms.Start();
-
-
-            var gwDirectory    = NewServedNodeDirectory("gw");
+            var gwDirectory    = NewNodeDirectory("gw");
 
             gateway          = new Gateway.Gateway(
                                    DNSClient:        dnsClient,
@@ -103,17 +89,25 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
 
             await gateway.Start();
 
+
+            var csmsDirectory  = NewServedNodeDirectory("csms");
+
+            csms             = new CSMS.CSMS(
+                                   DNSClient:        dnsClient,
+                                   HTTPPort:         IPPort.Parse(TestPorts.Free()),
+                                   AccountsPath:     csmsDirectory.Accounts,
+                                   ConfigFile:       csmsDirectory.ConfigFile,
+                                   LogToConsole:     false,
+                                   BridgeDebugLog:   false
+                               );
+
+            await csms.Start();
+
         }
 
         [TearDown]
         public async Task Stop()
         {
-
-            if (csms is not null)
-            {
-                await csms.Stop();
-                await csms.DisposeAsync();
-            }
 
             if (gateway is not null)
             {
@@ -121,29 +115,23 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
                 await gateway.DisposeAsync();
             }
 
+            if (csms is not null)
+            {
+                await csms.Stop();
+                await csms.DisposeAsync();
+            }
+
         }
 
         #endregion
 
 
-        #region CSMS_to_GW_viaWS(Transport, Authentication)
+        #region GW_to_CSMS_viaWS(Transport, Authentication)
 
-        /// <summary>
-        /// The CSMS dials the gateway - the one node that dials
-        /// downwards. The gateway lets it in as a connection the other
-        /// end makes, written down under the name the CSMS signs in with; the
-        /// CSMS names the node its connection leads to, and knows its login.
-        /// </summary>
         [TestCase("ws", "basic")]
-        public async Task CSMS_to_GW_viaWS(String  Transport,
+        public async Task GW_to_CSMS_viaWS(String  Transport,
                                            String  Authentication)
         {
-
-            if (csms is null)
-            {
-                Assert.Fail("The CSMS is not running!");
-                return;
-            }
 
             if (gateway is null)
             {
@@ -151,53 +139,36 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
                 return;
             }
 
+            if (csms is null)
+            {
+                Assert.Fail("The CSMS is not running!");
+                return;
+            }
 
-            var login        = "csms-" + RandomExtensions.RandomString(8);
-            var node         = gateway.Node.Id.ToString();
-            var description  = $"{csms.OCPP.NodeId} --({Transport}/{Authentication})--> {node}";
-            var door         = $"{Transport}://127.0.0.1:{gateway.OCPPServerSettings.TCPPort}/{login}";
-            var error        = "";
 
-            BelievesTheTestCA(csms);
+            var login        = "gw-" + RandomExtensions.RandomString(8);
+            var description  = $"{gateway.OCPP.NodeId} --({Transport}/{Authentication})--> {csms.OCPP.NodeId}";
 
-            // The gateway: the CSMS, written down as a connection it makes.
+            var credentials  = Credentials(gateway, csms, login, Authentication, description);
+
+            BelievesTheTestCA(gateway);
+
             Assert.That(
                 gateway.Connections.TryAddConnection(
-                     "The CSMS, dialling in",
-                     door,
+                     description,
+                     $"{Transport}://{login}@127.0.0.1:{csms.OCPPServerSettings.TCPPort}",
                      "CSMS",
                      true,
-                     null,
-                     null,
-                     out var inbound,
-                     out error,
-                     Inbound: true
-                ),
-                Is.True, error
-            );
-
-            // The CSMS: a login of the node it dials, and the connection to it.
-            Assert.That(csms.WebSocketLogins.TrySetPassword(node, RandomExtensions.RandomString(32), null, "tests", out error), Is.True, error);
-            Assert.That(csms.WebSocketLogins.TrySetGateway(node, true, out error),                                                 Is.True, error);
-
-            Assert.That(
-                csms.Connections.TryAddConnection(
-                     description,
-                     door,
-                     "Gateway",
-                     true,
-                     Credentials(csms, gateway, login, Authentication, description),
+                     credentials,
                      null,
                      out var connection,
-                     out error,
-                     RemoteNodeId: node
+                     out var error
                 ),
                 Is.True, error
             );
 
-            await Until(() => StatusOf(csms, connection!) == ConnectionStatus.Connected,     $"'{login}' dialling over {Transport}",                csms, gateway);
-            await Until(() => StatusOf(gateway, inbound!) == ConnectionStatus.Connected, $"'{login}' being let in by the gateway", csms, gateway);
-            await Until(() => csms.IsConnected(node),                                         $"'{node}' counting as connected at the CSMS",        csms, gateway);
+            await Until(() => StatusOf(gateway, connection!) == ConnectionStatus.Connected, $"'{login}' connecting over {Transport}", gateway, csms);
+            await Until(() => RegistrationOf(gateway) == "Accepted",                       $"'{login}' being accepted by the CSMS", gateway, csms);
 
 
             //var station = await AStationAtTheCSMS(Transport, "cs001");

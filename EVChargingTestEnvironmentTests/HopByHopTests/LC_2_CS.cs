@@ -46,11 +46,11 @@ using org.GraphDefined.Vanaheimr.Illias;
 
 #endregion
 
-namespace cloud.charging.open.TestEnvironment.Tests.Connections
+namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 {
 
     [TestFixture]
-    public class LC_2_CS : ATestsBase
+    public class LC_2_CS : AHopByHopTest
     {
 
         #region Data

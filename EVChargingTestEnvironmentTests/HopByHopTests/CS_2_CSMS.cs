@@ -46,18 +46,18 @@ using org.GraphDefined.Vanaheimr.Illias;
 
 #endregion
 
-namespace cloud.charging.open.TestEnvironment.Tests.Connections
+namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 {
 
     [TestFixture]
-    public class CS_2_CSMS : ATestsBase
+    public class CS_2_CSMS : AHopByHopTest
     {
 
         #region Data
 
-        private DNSClient?                       dnsClient;
-        private ChargingStation.ChargingStation? chargingStation;
-        private CSMS.CSMS?                       csms;
+        private DNSClient?                        dnsClient;
+        private ChargingStation.ChargingStation?  chargingStation;
+        private CSMS.CSMS?                        csms;
 
 
         private const           String    KnownCard       = "04A2B3C4D5E6F7";
@@ -72,39 +72,40 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
         public async Task Start()
         {
 
-            dnsClient        = new DNSClient(
-                                   SearchForIPv6DNSServers: false
-                               );
+            dnsClient          = new DNSClient(
+                                     SearchForIPv6DNSServers: false
+                                 );
 
             var csDirectory    = NewNodeDirectory("cs");
 
-            chargingStation  = new ChargingStation.ChargingStation(
-                                   DNSClient:        dnsClient,
-                                   HTTPPort:         IPPort.Parse(TestPorts.Free()),
-                                   NoKiosk:          true,
-                                   AccountsPath:     csDirectory.Accounts,
-                                   ConfigFile:       csDirectory.ConfigFile,
-                                   LogToConsole:     false,
-                                   BridgeDebugLog:   false
-                               );
+            chargingStation    = new ChargingStation.ChargingStation(
+                                     DNSClient:        dnsClient,
+                                     HTTPPort:         IPPort.Parse(TestPorts.Free()),
+                                     NoKiosk:          true,
+                                     AccountsPath:     csDirectory.Accounts,
+                                     ConfigFile:       csDirectory.ConfigFile,
+                                     LogToConsole:     false,
+                                     BridgeDebugLog:   false
+                                 );
 
             await chargingStation.Start();
 
 
             var csmsDirectory  = NewServedNodeDirectory("csms");
 
-            csms             = new CSMS.CSMS(
-                                   DNSClient:        dnsClient,
-                                   HTTPPort:         IPPort.Parse(TestPorts.Free()),
-                                   AccountsPath:     csmsDirectory.Accounts,
-                                   ConfigFile:       csmsDirectory.ConfigFile,
-                                   LogToConsole:     false,
-                                   BridgeDebugLog:   false
-                               );
+            csms               = new CSMS.CSMS(
+                                     DNSClient:        dnsClient,
+                                     HTTPPort:         IPPort.Parse(TestPorts.Free()),
+                                     AccountsPath:     csmsDirectory.Accounts,
+                                     ConfigFile:       csmsDirectory.ConfigFile,
+                                     LogToConsole:     false,
+                                     BridgeDebugLog:   false
+                                 );
 
             await csms.Start();
 
         }
+
 
         [TearDown]
         public async Task Stop()
@@ -129,7 +130,9 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
 
         #region WebSocket(Transport, Authentication)
 
-        [TestCase("ws", authPassword)]
+        [TestCase("ws",  authPassword)]
+        [TestCase("wss", authPassword)]
+        [TestCase("ws",  authTOTP)]
         [TestCase("wss", authTOTP)]
         public async Task WebSocket(String  Transport,
                                     String  Authentication)

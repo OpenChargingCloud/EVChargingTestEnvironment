@@ -34,30 +34,30 @@ using cloud.charging.open.protocols.WWCP.Node.Certificates;
 using cloud.charging.open.protocols.WWCP.Node.Configuration;
 using cloud.charging.open.protocols.WWCP.Node.TestKit;
 
-using cloud.charging.open.ChargingStation;
+using cloud.charging.open.Gateway;
 using cloud.charging.open.protocols.WWCP.Node.Connections;
 using cloud.charging.open.protocols.WWCP.Node.Logins;
 
 using WWCPNode    = cloud.charging.open.protocols.WWCP.Node.WWCPNode;
 //using Management  = cloud.charging.open.CSMS.CSMS;
-//using Controller  = cloud.charging.open.LocalController.LocalController;
-//using Station     = cloud.charging.open.ChargingStation.ChargingStation;
+//using Controller  = cloud.charging.open.Gateway.Gateway;
+//using Station     = cloud.charging.open.Gateway.Gateway;
 using org.GraphDefined.Vanaheimr.Illias;
 
 #endregion
 
-namespace cloud.charging.open.TestEnvironment.Tests.Connections
+namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 {
 
     [TestFixture]
-    public class CSMS_2_CS : ATestsBase
+    public class CSMS_2_GW : AHopByHopTest
     {
 
         #region Data
 
-        private DNSClient?                       dnsClient;
-        private CSMS.CSMS?                       csms;
-        private ChargingStation.ChargingStation? chargingStation;
+        private DNSClient?       dnsClient;
+        private CSMS.CSMS?       csms;
+        private Gateway.Gateway? gateway;
 
 
         private const           String    KnownCard       = "04A2B3C4D5E6F7";
@@ -90,19 +90,18 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
             await csms.Start();
 
 
-            var csDirectory    = NewServedNodeDirectory("cs");
+            var gwDirectory    = NewServedNodeDirectory("gw");
 
-            chargingStation  = new ChargingStation.ChargingStation(
+            gateway          = new Gateway.Gateway(
                                    DNSClient:        dnsClient,
                                    HTTPPort:         IPPort.Parse(TestPorts.Free()),
-                                   NoKiosk:          true,
-                                   AccountsPath:     csDirectory.Accounts,
-                                   ConfigFile:       csDirectory.ConfigFile,
+                                   AccountsPath:     gwDirectory.Accounts,
+                                   ConfigFile:       gwDirectory.ConfigFile,
                                    LogToConsole:     false,
                                    BridgeDebugLog:   false
                                );
 
-            await chargingStation.Start();
+            await gateway.Start();
 
         }
 
@@ -116,10 +115,10 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
                 await csms.DisposeAsync();
             }
 
-            if (chargingStation is not null)
+            if (gateway is not null)
             {
-                await chargingStation.Stop();
-                await chargingStation.DisposeAsync();
+                await gateway.Stop();
+                await gateway.DisposeAsync();
             }
 
         }
@@ -127,18 +126,17 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
         #endregion
 
 
-        #region WebSocket(Transport, Authentication)
+        #region CSMS_to_GW_viaWS(Transport, Authentication)
 
         /// <summary>
-        /// The CSMS dials the charging station - the one node that dials
-        /// downwards. The charging station lets it in as a connection the other
+        /// The CSMS dials the gateway - the one node that dials
+        /// downwards. The gateway lets it in as a connection the other
         /// end makes, written down under the name the CSMS signs in with; the
         /// CSMS names the node its connection leads to, and knows its login.
         /// </summary>
-        [TestCase("ws", authPassword)]
-        [TestCase("wss", authTOTP)]
-        public async Task WebSocket(String  Transport,
-                                    String  Authentication)
+        [TestCase("ws", "basic")]
+        public async Task CSMS_to_GW_viaWS(String  Transport,
+                                           String  Authentication)
         {
 
             if (csms is null)
@@ -147,24 +145,24 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
                 return;
             }
 
-            if (chargingStation is null)
+            if (gateway is null)
             {
-                Assert.Fail("The charging station is not running!");
+                Assert.Fail("The gateway is not running!");
                 return;
             }
 
 
             var login        = "csms-" + RandomExtensions.RandomString(8);
-            var node         = chargingStation.Id?.ToString() ?? ChargingStation.ChargingStation.DefaultOCPP21NodeId;
+            var node         = gateway.Node.Id.ToString();
             var description  = $"{csms.OCPP.NodeId} --({Transport}/{Authentication})--> {node}";
-            var door         = $"{Transport}://127.0.0.1:{chargingStation.OCPPServerSettings.TCPPort}/{login}";
+            var door         = $"{Transport}://127.0.0.1:{gateway.OCPPServerSettings.TCPPort}/{login}";
             var error        = "";
 
             BelievesTheTestCA(csms);
 
-            // The charging station: the CSMS, written down as a connection it makes.
+            // The gateway: the CSMS, written down as a connection it makes.
             Assert.That(
-                chargingStation.Connections.TryAddConnection(
+                gateway.Connections.TryAddConnection(
                      "The CSMS, dialling in",
                      door,
                      "CSMS",
@@ -180,14 +178,15 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
 
             // The CSMS: a login of the node it dials, and the connection to it.
             Assert.That(csms.WebSocketLogins.TrySetPassword(node, RandomExtensions.RandomString(32), null, "tests", out error), Is.True, error);
+            Assert.That(csms.WebSocketLogins.TrySetGateway(node, true, out error),                                                 Is.True, error);
 
             Assert.That(
                 csms.Connections.TryAddConnection(
                      description,
                      door,
-                     "ChargingStation",
+                     "Gateway",
                      true,
-                     Credentials(csms, chargingStation, login, Authentication, description),
+                     Credentials(csms, gateway, login, Authentication, description),
                      null,
                      out var connection,
                      out error,
@@ -196,9 +195,9 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
                 Is.True, error
             );
 
-            await Until(() => StatusOf(csms, connection!) == ConnectionStatus.Connected,     $"'{login}' dialling over {Transport}",                csms, chargingStation);
-            await Until(() => StatusOf(chargingStation, inbound!) == ConnectionStatus.Connected, $"'{login}' being let in by the charging station", csms, chargingStation);
-            await Until(() => RegistrationOf(chargingStation) == "Accepted",                                $"'{node}' being accepted by the CSMS",              csms, chargingStation);
+            await Until(() => StatusOf(csms, connection!) == ConnectionStatus.Connected,     $"'{login}' dialling over {Transport}",                csms, gateway);
+            await Until(() => StatusOf(gateway, inbound!) == ConnectionStatus.Connected, $"'{login}' being let in by the gateway", csms, gateway);
+            await Until(() => csms.IsConnected(node),                                         $"'{node}' counting as connected at the CSMS",        csms, gateway);
 
 
             //var station = await AStationAtTheCSMS(Transport, "cs001");

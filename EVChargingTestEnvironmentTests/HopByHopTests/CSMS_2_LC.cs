@@ -34,29 +34,29 @@ using cloud.charging.open.protocols.WWCP.Node.Certificates;
 using cloud.charging.open.protocols.WWCP.Node.Configuration;
 using cloud.charging.open.protocols.WWCP.Node.TestKit;
 
-using cloud.charging.open.ChargingStation;
+using cloud.charging.open.LocalController;
 using cloud.charging.open.protocols.WWCP.Node.Connections;
 using cloud.charging.open.protocols.WWCP.Node.Logins;
 
 using WWCPNode    = cloud.charging.open.protocols.WWCP.Node.WWCPNode;
 //using Management  = cloud.charging.open.CSMS.CSMS;
 //using Controller  = cloud.charging.open.LocalController.LocalController;
-//using Station     = cloud.charging.open.ChargingStation.ChargingStation;
+//using Station     = cloud.charging.open.LocalController.LocalController;
 using org.GraphDefined.Vanaheimr.Illias;
 
 #endregion
 
-namespace cloud.charging.open.TestEnvironment.Tests.Connections
+namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 {
 
     [TestFixture]
-    public class CS_2_LC : ATestsBase
+    public class CSMS_2_LC : AHopByHopTest
     {
 
         #region Data
 
         private DNSClient?                       dnsClient;
-        private ChargingStation.ChargingStation? chargingStation;
+        private CSMS.CSMS?                       csms;
         private LocalController.LocalController? localController;
 
 
@@ -76,22 +76,21 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
                                    SearchForIPv6DNSServers: false
                                );
 
-            var csDirectory    = NewNodeDirectory("cs");
+            var csmsDirectory  = NewNodeDirectory("csms");
 
-            chargingStation  = new ChargingStation.ChargingStation(
+            csms             = new CSMS.CSMS(
                                    DNSClient:        dnsClient,
                                    HTTPPort:         IPPort.Parse(TestPorts.Free()),
-                                   NoKiosk:          true,
-                                   AccountsPath:     csDirectory.Accounts,
-                                   ConfigFile:       csDirectory.ConfigFile,
+                                   AccountsPath:     csmsDirectory.Accounts,
+                                   ConfigFile:       csmsDirectory.ConfigFile,
                                    LogToConsole:     false,
                                    BridgeDebugLog:   false
                                );
 
-            await chargingStation.Start();
+            await csms.Start();
 
 
-            var lcDirectory    = NewServedNodeDirectory("lc");
+            var lcDirectory    = NewServedNodeDirectory("lc", ReportsUpwards());
 
             localController  = new LocalController.LocalController(
                                    DNSClient:        dnsClient,
@@ -110,10 +109,10 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
         public async Task Stop()
         {
 
-            if (chargingStation is not null)
+            if (csms is not null)
             {
-                await chargingStation.Stop();
-                await chargingStation.DisposeAsync();
+                await csms.Stop();
+                await csms.DisposeAsync();
             }
 
             if (localController is not null)
@@ -127,22 +126,22 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
         #endregion
 
 
-        #region WebSocket(Transport, Authentication)
+        #region CSMS_to_LC_viaWS(Transport, Authentication)
 
         /// <summary>
-        /// The station dials the local controller and is let in. Whether it is accepted is
-        /// for the CSMS above the local controller to say, and there is none here: so it
-        /// is the line, at both its ends, that is tested.
+        /// The CSMS dials the local controller - the one node that dials
+        /// downwards. The local controller lets it in as a connection the other
+        /// end makes, written down under the name the CSMS signs in with; the
+        /// CSMS names the node its connection leads to, and knows its login.
         /// </summary>
-        [TestCase("ws", authPassword)]
-        [TestCase("wss", authTOTP)]
-        public async Task WebSocket(String  Transport,
-                                    String  Authentication)
+        [TestCase("ws", "basic")]
+        public async Task CSMS_to_LC_viaWS(String  Transport,
+                                           String  Authentication)
         {
 
-            if (chargingStation is null)
+            if (csms is null)
             {
-                Assert.Fail("The charging station is not running!");
+                Assert.Fail("The CSMS is not running!");
                 return;
             }
 
@@ -153,29 +152,52 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
             }
 
 
-            var login        = "cs-" + RandomExtensions.RandomString(8);
-            var description  = $"{chargingStation.Id} --({Transport}/{Authentication})--> {localController.OCPP.NodeId}";
+            var login        = "csms-" + RandomExtensions.RandomString(8);
+            var node         = localController.Node.Id.ToString();
+            var description  = $"{csms.OCPP.NodeId} --({Transport}/{Authentication})--> {node}";
+            var door         = $"{Transport}://127.0.0.1:{localController.OCPPServerSettings.TCPPort}/{login}";
+            var error        = "";
 
-            var credentials  = Credentials(chargingStation, localController, login, Authentication, description);
+            BelievesTheTestCA(csms);
 
-            BelievesTheTestCA(chargingStation);
-
+            // The local controller: the CSMS, written down as a connection it makes.
             Assert.That(
-                chargingStation.Connections.TryAddConnection(
-                     description,
-                     $"{Transport}://{login}@127.0.0.1:{localController.OCPPServerSettings.TCPPort}",
-                     "LocalController",
+                localController.Connections.TryAddConnection(
+                     "The CSMS, dialling in",
+                     door,
+                     "CSMS",
                      true,
-                     credentials,
                      null,
-                     out var connection,
-                     out var error
+                     null,
+                     out var inbound,
+                     out error,
+                     Inbound: true
                 ),
                 Is.True, error
             );
 
-            await Until(() => StatusOf(chargingStation, connection!) == ConnectionStatus.Connected, $"'{login}' connecting over {Transport}", chargingStation, localController);
-            await Until(() => IsConnectedAt(localController, login),                              $"'{login}' being let in by the local controller", chargingStation, localController);
+            // The CSMS: a login of the node it dials, and the connection to it.
+            Assert.That(csms.WebSocketLogins.TrySetPassword(node, RandomExtensions.RandomString(32), null, "tests", out error), Is.True, error);
+            Assert.That(csms.WebSocketLogins.TrySetLocalController(node, true, out error),                                                 Is.True, error);
+
+            Assert.That(
+                csms.Connections.TryAddConnection(
+                     description,
+                     door,
+                     "LocalController",
+                     true,
+                     Credentials(csms, localController, login, Authentication, description),
+                     null,
+                     out var connection,
+                     out error,
+                     RemoteNodeId: node
+                ),
+                Is.True, error
+            );
+
+            await Until(() => StatusOf(csms, connection!) == ConnectionStatus.Connected,     $"'{login}' dialling over {Transport}",                csms, localController);
+            await Until(() => StatusOf(localController, inbound!) == ConnectionStatus.Connected, $"'{login}' being let in by the local controller", csms, localController);
+            await Until(() => csms.IsConnected(node),                                         $"'{node}' counting as connected at the CSMS",        csms, localController);
 
 
             //var station = await AStationAtTheCSMS(Transport, "cs001");
@@ -201,74 +223,6 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
             //}
 
             //await TheThreeCards(station, Transport);
-
-        }
-
-        #endregion
-
-        #region SSH(Authentication)
-
-        /// <summary>
-        /// The station dials the local controller's SSH server with its own
-        /// key, and pins the key the server shows. An SSH server of a node
-        /// takes keys and nothing else, so there is no password over SSH.
-        /// </summary>
-        [TestCase(authPassword, Ignore = "The SSH server of a node lets stations in by their keys only - it takes no passwords.")]
-        [TestCase(authPublicKey)]
-        public async Task SSH(String Authentication)
-        {
-
-            if (chargingStation is null)
-            {
-                Assert.Fail("The charging station is not running!");
-                return;
-            }
-
-            if (localController is null)
-            {
-                Assert.Fail("The local controller is not running!");
-                return;
-            }
-
-
-            var login        = "cs-" + RandomExtensions.RandomString(8);
-            var description  = $"{chargingStation.Id} --(ssh/{Authentication})--> {localController.OCPP.NodeId}";
-            var key          = await chargingStation.SshKey.MakeIfNeeded();
-
-            Assert.That(localController.OCPPOverSSHServed, Is.True, "OCPP over SSH is switched on in the file, and not served.");
-
-            Assert.That(
-                localController.TryAddStationSSHKey(
-                    login,
-                    SshPublicKey.FromHostKey(key).ToAuthorizedKeyLine(),
-                    "test",
-                    null,
-                    null,
-                    "tests",
-                    out _,
-                    out var error,
-                    out _
-                ),
-                Is.True, error
-            );
-
-            Assert.That(
-                chargingStation.Connections.TryAddConnection(
-                     description,
-                     $"ssh://{login}@127.0.0.1:{localController.SSHPort!.Value.ToUInt16()}",
-                     "LocalController",
-                     true,
-                     null,
-                     null,
-                     out var connection,
-                     out error,
-                     SshHostKey: localController.SSHHostKey!.Split(' ', 2)[1]
-                ),
-                Is.True, error
-            );
-
-            await Until(() => StatusOf(chargingStation, connection!) == ConnectionStatus.Connected, $"'{login}' connecting over SSH",                   chargingStation, localController);
-            await Until(() => IsConnectedAt(localController, login),                                $"'{login}' being let in by the local controller",  chargingStation, localController);
 
         }
 

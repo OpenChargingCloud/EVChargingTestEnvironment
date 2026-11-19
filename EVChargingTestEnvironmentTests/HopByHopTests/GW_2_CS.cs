@@ -46,18 +46,18 @@ using org.GraphDefined.Vanaheimr.Illias;
 
 #endregion
 
-namespace cloud.charging.open.TestEnvironment.Tests.Connections
+namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 {
 
     [TestFixture]
-    public class GW_2_LC : ATestsBase
+    public class GW_2_CS : AHopByHopTest
     {
 
         #region Data
 
         private DNSClient?                       dnsClient;
         private Gateway.Gateway?                 gateway;
-        private LocalController.LocalController? localController;
+        private ChargingStation.ChargingStation? chargingStation;
 
 
         private const           String    KnownCard       = "04A2B3C4D5E6F7";
@@ -90,18 +90,19 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
             await gateway.Start();
 
 
-            var lcDirectory    = NewServedNodeDirectory("lc");
+            var csDirectory    = NewServedNodeDirectory("cs");
 
-            localController  = new LocalController.LocalController(
+            chargingStation  = new ChargingStation.ChargingStation(
                                    DNSClient:        dnsClient,
                                    HTTPPort:         IPPort.Parse(TestPorts.Free()),
-                                   AccountsPath:     lcDirectory.Accounts,
-                                   ConfigFile:       lcDirectory.ConfigFile,
+                                   NoKiosk:          true,
+                                   AccountsPath:     csDirectory.Accounts,
+                                   ConfigFile:       csDirectory.ConfigFile,
                                    LogToConsole:     false,
                                    BridgeDebugLog:   false
                                );
 
-            await localController.Start();
+            await chargingStation.Start();
 
         }
 
@@ -115,10 +116,10 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
                 await gateway.DisposeAsync();
             }
 
-            if (localController is not null)
+            if (chargingStation is not null)
             {
-                await localController.Stop();
-                await localController.DisposeAsync();
+                await chargingStation.Stop();
+                await chargingStation.DisposeAsync();
             }
 
         }
@@ -126,15 +127,19 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
         #endregion
 
 
-        #region GW_to_LC_viaWS(Transport, Authentication)
+        #region GW_to_CS_viaWS(Transport, Authentication)
 
         /// <summary>
-        /// The gateway dials the local controller and is let in. Whether it is accepted is
-        /// for the CSMS above the local controller to say, and there is none here: so it
-        /// is the line, at both its ends, that is tested.
+        /// A gateway dials only upwards - its CSMS, a local controller
+        /// or a gateway above it (ConnectionRules.BackEnds) - and talks to
+        /// what dials it as the node above: the one node that dials a
+        /// charging station is the CSMS (ConnectionRules.NodesBelow). So
+        /// there is nothing here to test until a gateway can dial
+        /// downwards, see CSMS_2_CS.
         /// </summary>
         [TestCase("ws", "basic")]
-        public async Task GW_to_LC_viaWS(String  Transport,
+        [Ignore("A gateway dials no charging station: only the CSMS dials downwards (ConnectionRules.NodesBelow).")]
+        public async Task GW_to_CS_viaWS(String  Transport,
                                          String  Authentication)
         {
 
@@ -144,27 +149,23 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
                 return;
             }
 
-            if (localController is null)
+            if (chargingStation is null)
             {
-                Assert.Fail("The local controller is not running!");
+                Assert.Fail("The charging station is not running!");
                 return;
             }
 
 
             var login        = "gw-" + RandomExtensions.RandomString(8);
-            var description  = $"{gateway.OCPP.NodeId} --({Transport}/{Authentication})--> {localController.OCPP.NodeId}";
-
-            var credentials  = Credentials(gateway, localController, login, Authentication, description);
-
-            BelievesTheTestCA(gateway);
+            var description  = $"{gateway.OCPP.NodeId} --({Transport}/{Authentication})--> {chargingStation.Id}";
 
             Assert.That(
                 gateway.Connections.TryAddConnection(
                      description,
-                     $"{Transport}://{login}@127.0.0.1:{localController.OCPPServerSettings.TCPPort}",
-                     "LocalController",
+                     $"{Transport}://{login}@127.0.0.1:{chargingStation.OCPPServerSettings.TCPPort}",
+                     "ChargingStation",
                      true,
-                     credentials,
+                     Credentials(gateway, chargingStation, login, Authentication, description),
                      null,
                      out var connection,
                      out var error
@@ -172,8 +173,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections
                 Is.True, error
             );
 
-            await Until(() => StatusOf(gateway, connection!) == ConnectionStatus.Connected, $"'{login}' connecting over {Transport}", gateway, localController);
-            await Until(() => IsConnectedAt(localController, login),                              $"'{login}' being let in by the local controller", gateway, localController);
+            await Until(() => StatusOf(gateway, connection!) == ConnectionStatus.Connected, $"'{login}' connecting over {Transport}", gateway, chargingStation);
 
 
             //var station = await AStationAtTheCSMS(Transport, "cs001");
