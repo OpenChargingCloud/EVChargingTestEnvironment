@@ -212,11 +212,12 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         #region SSH(Authentication)
 
         /// <summary>
-        /// The station dials the local controller's SSH server with its own
-        /// key, and pins the key the server shows. An SSH server of a node
-        /// takes keys and nothing else, so there is no password over SSH.
+        /// The station dials the local controller's SSH server, and pins the
+        /// key the server shows: with its password, with a one-time password
+        /// bound to the SSH session, or with its own key.
         /// </summary>
-        [TestCase(authPassword, Ignore = "The SSH server of a node lets stations in by their keys only - it takes no passwords.")]
+        [TestCase(authPassword)]
+        [TestCase(authTOTP)]
         [TestCase(authPublicKey)]
         public async Task SSH(String Authentication)
         {
@@ -237,23 +238,31 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             var login        = "cs-" + RandomExtensions.RandomString(8);
             var description  = $"{chargingStation.Id} --(ssh/{Authentication})--> {localController.OCPP.NodeId}";
             var key          = await chargingStation.SshKey.MakeIfNeeded();
+            var error        = "";
+            String? credentials = null;
 
             Assert.That(localController.OCPPOverSSHServed, Is.True, "OCPP over SSH is switched on in the file, and not served.");
 
-            Assert.That(
-                localController.TryAddStationSSHKey(
-                    login,
-                    SshPublicKey.FromHostKey(key).ToAuthorizedKeyLine(),
-                    "test",
-                    null,
-                    null,
-                    "tests",
-                    out _,
-                    out var error,
-                    out _
-                ),
-                Is.True, error
-            );
+            // Its own key - or a password or the secret of one-time passwords,
+            // and its own key then is one the controller does not know.
+            if (Authentication == authPublicKey)
+                Assert.That(
+                    localController.TryAddStationSSHKey(
+                        login,
+                        SshPublicKey.FromHostKey(key).ToAuthorizedKeyLine(),
+                        "test",
+                        null,
+                        null,
+                        "tests",
+                        out _,
+                        out error,
+                        out _
+                    ),
+                    Is.True, error
+                );
+
+            else
+                credentials = Credentials(chargingStation, localController, login, Authentication, description);
 
             Assert.That(
                 chargingStation.Connections.TryAddConnection(
@@ -261,7 +270,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
                      $"ssh://{login}@127.0.0.1:{localController.SSHPort!.Value.ToUInt16()}",
                      "LocalController",
                      true,
-                     null,
+                     credentials,
                      null,
                      out var connection,
                      out error,
