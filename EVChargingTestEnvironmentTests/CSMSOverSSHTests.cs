@@ -36,10 +36,11 @@ using cloud.charging.open.protocols.OCPPv2_1.CS;
 using cloud.charging.open.protocols.OCPPv2_1.CSMS;
 
 using cloud.charging.open.protocols.WWCP.Node.Connections;
+using cloud.charging.open.protocols.WWCP.Node.Logins;
 
 using WWCPNode    = cloud.charging.open.protocols.WWCP.Node.WWCPNode;
 using OCPPv21Node = cloud.charging.open.protocols.OCPPv2_1.NetworkingNode.INetworkingNode;
-using AuthMethod  = cloud.charging.open.CSMS.OCPP.AuthMethod;
+using AuthMethod  = cloud.charging.open.protocols.WWCP.Node.Logins.AuthMethod;
 using Management  = cloud.charging.open.CSMS.CSMS;
 
 #endregion
@@ -122,12 +123,12 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
         protected override void TakeAwayTheKey(String Login, String Fingerprint)
         {
-            Assert.That(CSMS.StationLogins.TryRemoveSSHKey(Login, Fingerprint, out var error), Is.True, error);
+            Assert.That(CSMS.WebSocketLogins.TryRemoveSSHKey(Login, Fingerprint, out var error), Is.True, error);
         }
 
         protected override void GiveThePassword(String Login, String Password)
         {
-            Assert.That(CSMS.StationLogins.TrySetPassword(Login, Password, null, "tests", out _, out var error), Is.True, error);
+            Assert.That(CSMS.WebSocketLogins.TrySetPassword(Login, Password, null, "tests", out var error), Is.True, error);
         }
 
         protected override Task<TriggerMessageResponse> AskForABootNotification(String Login)
@@ -174,11 +175,11 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             => new (
                    new JProperty("nts",         TestParties.NoTimeServers),
-                   new JProperty("ocppServer",  new JObject(
+                   new JProperty("webSocketServer",  new JObject(
                        new JProperty("enabled",           true),
                        new JProperty("address",           "127.0.0.1"),
                        new JProperty("port",              TestPorts.Free()),
-                       new JProperty("securityProfiles",  new JArray(1)),
+                       new JProperty("clientAuthentication",  new JArray("httpAuthWithoutTLS")),
                        new JProperty("subprotocols",      new JArray("ocpp2.1", "ocpp2.0.1")),
                        new JProperty("ssh",               new JObject(
                            new JProperty("enabled",         true),
@@ -250,7 +251,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
             var (cs001, connection001) = await AStationConnected("cs001");
             var (cs002, connection002) = await AStationConnected("cs002");
 
-            Assert.That(CSMS.StationLogins.TrySetEnabled("cs001", false, out var error), Is.True, error);
+            Assert.That(CSMS.WebSocketLogins.TrySetEnabled("cs001", false, out var error), Is.True, error);
 
             await Until(() => !IsConnectedOverSSH("cs001") && !HasAnSSHSessionOf("cs001"), "The session of a station switched off ending", cs001);
             await Until(() => StatusOf(cs001, connection001) == ConnectionStatus.Refused,  "The station being turned away when it comes back", cs001);
@@ -281,13 +282,13 @@ namespace cloud.charging.open.TestEnvironment.Tests
             // Longer than the test, so that only the store's own news can do it.
             CSMS.SSHSessionRecheckEvery = TimeSpan.FromMinutes(10);
 
-            Assert.That(CSMS.StationLogins.TryAddOrUpdateGroup("field-test", "Field test", true, [ AuthMethod.Basic, AuthMethod.SSHKey ], [ 1 ], null, out var error),
+            Assert.That(CSMS.WebSocketLogins.TryAddOrUpdateGroup("field-test", "Field test", true, [ AuthMethod.Basic, AuthMethod.SSHKey ], [ WebSocketClientAuthentication.HTTPAuthWithoutTLS ], null, out var error),
                         Is.True, error);
 
             var (inTheGroup, connection) = await AStationConnected("cs001", Group: "field-test");
             var (elsewhere,  other)      = await AStationConnected("cs002");
 
-            Assert.That(CSMS.StationLogins.TryAddOrUpdateGroup("field-test", "Field test", true, [ AuthMethod.Basic ], [ 1 ], null, out error),
+            Assert.That(CSMS.WebSocketLogins.TryAddOrUpdateGroup("field-test", "Field test", true, [ AuthMethod.Basic ], [ WebSocketClientAuthentication.HTTPAuthWithoutTLS ], null, out error),
                         Is.True, error);
 
             await Until(() => !IsConnectedOverSSH("cs001") && !HasAnSSHSessionOf("cs001"), "The session of a station whose group takes no SSH keys ending", inTheGroup);

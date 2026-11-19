@@ -37,6 +37,7 @@ using cloud.charging.open.protocols.OCPP.SSH;
 using cloud.charging.open.protocols.OCPPv2_1;
 using cloud.charging.open.protocols.OCPPv2_1.CS;
 using cloud.charging.open.protocols.OCPPv2_1.LC;
+using cloud.charging.open.protocols.WWCP.Node.Logins;
 
 using WWCPNode    = cloud.charging.open.protocols.WWCP.Node.WWCPNode;
 using OCPPv21Node = cloud.charging.open.protocols.OCPPv2_1.NetworkingNode.INetworkingNode;
@@ -140,12 +141,12 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
         protected override void TakeAwayTheKey(String Login, String Fingerprint)
         {
-            Assert.That(LC.StationLogins.TryRemoveSSHKey(Login, Fingerprint, out var error), Is.True, error);
+            Assert.That(LC.WebSocketLogins.TryRemoveSSHKey(Login, Fingerprint, out var error), Is.True, error);
         }
 
         protected override void GiveThePassword(String Login, String Password)
         {
-            Assert.That(LC.StationLogins.TrySetPassword(Login, Password, null, "tests", out _, out var error), Is.True, error);
+            Assert.That(LC.WebSocketLogins.TrySetPassword(Login, Password, null, "tests", out var error), Is.True, error);
         }
 
         protected override Task<TriggerMessageResponse> AskForABootNotification(String Login)
@@ -208,11 +209,11 @@ namespace cloud.charging.open.TestEnvironment.Tests
                              new JProperty("securityProfile",   1),
                              new JProperty("nextHopNodeId",     "CSMS")
                          )),
-                   new JProperty("ocppServer",  new JObject(
+                   new JProperty("webSocketServer",  new JObject(
                        new JProperty("enabled",           true),
                        new JProperty("address",           "127.0.0.1"),
                        new JProperty("port",              TestPorts.Free()),
-                       new JProperty("securityProfiles",  new JArray(1)),
+                       new JProperty("clientAuthentication",  new JArray("httpAuthWithoutTLS")),
                        new JProperty("subprotocols",      new JArray("ocpp2.1", "ocpp2.0.1")),
                        new JProperty("ssh",               new JObject(
                            new JProperty("enabled",         true),
@@ -306,11 +307,11 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             File.WriteAllText(configFile, new JObject(
                 new JProperty("nts",         TestParties.NoTimeServers),
-                new JProperty("ocppServer",  new JObject(
+                new JProperty("webSocketServer",  new JObject(
                     new JProperty("enabled",           true),
                     new JProperty("address",           "127.0.0.1"),
                     new JProperty("port",              TestPorts.Free()),
-                    new JProperty("securityProfiles",  new JArray(1)),
+                    new JProperty("clientAuthentication",  new JArray("httpAuthWithoutTLS")),
                     new JProperty("subprotocols",      new JArray("ocpp2.1", "ocpp2.0.1"))
                 ))
             ).ToString());
@@ -324,12 +325,12 @@ namespace cloud.charging.open.TestEnvironment.Tests
                                  BridgeDebugLog:  false
                              );
 
-            Assert.That(management.StationLogins.TrySetPassword(ControllerId, UplinkPassword, null, "tests", out _, out var error), Is.True, error);
+            Assert.That(management.WebSocketLogins.TrySetPassword(ControllerId, UplinkPassword, null, "tests", out var error), Is.True, error);
 
             // A local controller's login: in the overlay network, which the
             // controller dials by default, what it forwards in the name of
             // its stations is taken only from a login marked as one.
-            Assert.That(management.StationLogins.TrySetLocalController(ControllerId, true, out var markError), Is.True, markError);
+            Assert.That(management.WebSocketLogins.TrySetLocalController(ControllerId, true, out var markError), Is.True, markError);
 
             return management;
 

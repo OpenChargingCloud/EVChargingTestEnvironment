@@ -36,12 +36,12 @@ using cloud.charging.open.protocols.WWCP.Node.TestKit;
 
 using cloud.charging.open.ChargingStation;
 using cloud.charging.open.protocols.WWCP.Node.Connections;
+using cloud.charging.open.protocols.WWCP.Node.Logins;
 
 using WWCPNode    = cloud.charging.open.protocols.WWCP.Node.WWCPNode;
 using Management  = cloud.charging.open.CSMS.CSMS;
 using Controller  = cloud.charging.open.LocalController.LocalController;
 using Station     = cloud.charging.open.ChargingStation.ChargingStation;
-using ServerCertificateStore = cloud.charging.open.CSMS.OCPP.ServerCertificateStore;
 
 #endregion
 
@@ -227,11 +227,11 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             File.WriteAllText(configFile, new JObject(
                 new JProperty("nts",         TestParties.NoTimeServers),
-                new JProperty("ocppServer",  new JObject(
+                new JProperty("webSocketServer",  new JObject(
                     new JProperty("enabled",           true),
                     new JProperty("address",           "127.0.0.1"),
                     new JProperty("port",              TestPorts.Free()),
-                    new JProperty("securityProfiles",  new JArray(WithTLS ? 3 : 1)),
+                    new JProperty("clientAuthentication",  new JArray(WithTLS ? "tlsClientCertificate" : "httpAuthWithoutTLS")),
                     new JProperty("reachableAs",       new JArray("127.0.0.1")),
                     new JProperty("subprotocols",      new JArray("ocpp2.1", "ocpp2.0.1")),
                     new JProperty("ssh",               new JObject(
@@ -261,12 +261,12 @@ namespace cloud.charging.open.TestEnvironment.Tests
                              );
 
             // The controller of the last test signs in here with a password.
-            Assert.That(management.StationLogins.TrySetPassword(ControllerId, UplinkPassword, null, "tests", out _, out var error), Is.True, error);
+            Assert.That(management.WebSocketLogins.TrySetPassword(ControllerId, UplinkPassword, null, "tests", out var error), Is.True, error);
 
             // A local controller's login: in the overlay network, which the
             // controller dials by default, what it forwards in the name of
             // its stations is taken only from a login marked as one.
-            Assert.That(management.StationLogins.TrySetLocalController(ControllerId, true, out error), Is.True, error);
+            Assert.That(management.WebSocketLogins.TrySetLocalController(ControllerId, true, out error), Is.True, error);
 
             // Whatever the operator's CA vouches for is a station of this CSMS.
             if (WithTLS)
@@ -343,12 +343,31 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             System.IO.Directory.CreateDirectory(Directory);
 
-            using var store = new ServerCertificateStore(Path.Combine(Directory, ServerCertificateStore.DefaultDirectoryName));
+            // The station port is the listener "ocpp" of the node's store,
+            // "certificates" beside the CSMS's configuration file.
+            var store = new CertificateStore(
+                            Path.Combine(Directory, CertificatesConfiguration.DefaultDirectory),
+                            new cloud.charging.open.protocols.WWCP.Node.Logging.EventLog(),
+                            NodeName:      "CSMS",
+                            Listeners:     [ cloud.charging.open.protocols.OCPP.Node.OCPPServingNode.StationListener ],
+                            RequestKinds:  [ CertificateKind.TLSServerIdentity ]
+                        );
 
-            Assert.That(store.TryCreateKey("127.0.0.1", [ "127.0.0.1" ], null, out _, out var csr, out var error), Is.True, error);
+            store.Reload();
 
-            Assert.That(store.TryAddCertificate(SignedByTheOperatorsCA(csr!) + Environment.NewLine + TheOperatorsCA().ExportCertificatePem(),
-                                                [ "127.0.0.1" ], out _, out _, out error),
+            Assert.That(store.TryCreateRequest(CertificateKind.TLSServerIdentity,
+                                               "CN=127.0.0.1",
+                                               null,
+                                               new CertificateRequestAsks(ReachableAs: [ "127.0.0.1" ]),
+                                               [ cloud.charging.open.protocols.OCPP.Node.OCPPServingNode.StationListener ],
+                                               null,
+                                               out var request,
+                                               out var error,
+                                               out _),
+                        Is.True, error);
+
+            Assert.That(store.TryAnswerRequest(SignedByTheOperatorsCA(request!.CSR) + Environment.NewLine + TheOperatorsCA().ExportCertificatePem(),
+                                               out _, out _, out _, out error, out _),
                         Is.True, error);
 
         }
@@ -485,14 +504,14 @@ namespace cloud.charging.open.TestEnvironment.Tests
             {
 
                 case "basic":
-                    Assert.That(CSMS.StationLogins.TrySetPassword(Login, ThePassword, null, "tests", out _, out error), Is.True, error);
-                    Assert.That(station.Connections.TryAddAuthentication("The CSMS", "basic", Login, ThePassword, out credentials, out error), Is.True, error);
+                    Assert.That(CSMS.WebSocketLogins.TrySetPassword(Login, ThePassword, null, "tests", out error), Is.True, error);
+                    Assert.That(station.Connections.TryAddBasicAuthentication(Login, ThePassword, "The CSMS", out credentials, out error), Is.True, error);
                     url = $"ws://127.0.0.1:{webSocketPort}";
                     break;
 
                 case "totp":
-                    Assert.That(CSMS.StationLogins.TrySetTOTP(Login, TheSecret, null, null, null, null, null, "tests", out _, out error), Is.True, error);
-                    Assert.That(station.Connections.TryAddAuthentication("The CSMS", "totp", Login, TheSecret, out credentials, out error), Is.True, error);
+                    Assert.That(CSMS.WebSocketLogins.TrySetTOTP(Login, TheSecret, null, null, null, null, null, "tests", out _, out error), Is.True, error);
+                    Assert.That(station.Connections.TryAddTOTPAuthentication(Login, TheSecret, "The CSMS", out credentials, out error), Is.True, error);
                     url = $"ws://127.0.0.1:{webSocketPort}";
                     break;
 
@@ -587,11 +606,11 @@ namespace cloud.charging.open.TestEnvironment.Tests
                         new JProperty("securityProfile",   1),
                         new JProperty("nextHopNodeId",     "CSMS")
                     )),
-                    new JProperty("ocppServer",  new JObject(
+                    new JProperty("webSocketServer",  new JObject(
                         new JProperty("enabled",           true),
                         new JProperty("address",           "127.0.0.1"),
                         new JProperty("port",              TestPorts.Free()),
-                        new JProperty("securityProfiles",  new JArray(1)),
+                        new JProperty("clientAuthentication",  new JArray("httpAuthWithoutTLS")),
                         new JProperty("subprotocols",      new JArray("ocpp2.1", "ocpp2.0.1"))
                     ))
                 ).ToString());
@@ -618,11 +637,11 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             #region The station, below the controller
 
-            Assert.That(controller.StationLogins.TrySetPassword("cs001", ThePassword, null, "tests", out _, out var error), Is.True, error);
+            Assert.That(controller.WebSocketLogins.TrySetPassword("cs001", ThePassword, null, "tests", out var error), Is.True, error);
 
             var station = NewStation();
 
-            Assert.That(station.Connections.TryAddAuthentication("The controller", "basic", "cs001", ThePassword, out var credentials, out error), Is.True, error);
+            Assert.That(station.Connections.TryAddBasicAuthentication("cs001", ThePassword, "The controller", out var credentials, out error), Is.True, error);
 
             Assert.That(station.Connections.TryAddConnection("The controller",
                                                              $"ws://127.0.0.1:{controller.OCPPServerSettings.TCPPort!.Value.ToUInt16()}",

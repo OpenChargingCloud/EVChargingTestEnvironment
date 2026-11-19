@@ -76,3 +76,6 @@
 [submodule "libs/NTSServer"]
 	path = libs/NTSServer
 	url = https://github.com/OpenChargingCloud/NTSServer.git
+[submodule "libs/DNSServer"]
+	path = libs/DNSServer
+	url = https://github.com/OpenChargingCloud/DNSServer.git

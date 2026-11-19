@@ -252,16 +252,18 @@ namespace cloud.charging.open.TestEnvironment
         public Byte    OCPPSecurityProfile   => (Byte) (OCPPTLS ? 2 : 1);
 
         /// <summary>
-        /// Which profiles the two OCPP ports accept.
+        /// How a client may authenticate at the two OCPP ports - the
+        /// "clientAuthentication" of their section "webSocketServer", OCPP's
+        /// security profiles 2 and 3 with TLS, 1 without.
         /// </summary>
         /// <remarks>
         /// One of them and not a generous list, because this list is what
-        /// decides whether the port is encrypted at all: anything above 1 in
-        /// it turns TLS on, and a port that is encrypted while the things
-        /// below it dial <c>ws://</c> answers them with a corrupted frame.
+        /// decides whether the port is encrypted at all: a way over TLS in it
+        /// turns TLS on, and a port that is encrypted while the things below
+        /// it dial <c>ws://</c> answers them with a corrupted frame.
         /// </remarks>
-        public IEnumerable<Int32> OCPPSecurityProfiles
-            => OCPPTLS ? [ 2, 3 ] : [ 1 ];
+        public IEnumerable<String> OCPPClientAuthentication
+            => OCPPTLS ? [ "httpAuthOverTLS", "tlsClientCertificate" ] : [ "httpAuthWithoutTLS" ];
 
         /// <summary>Where charging stations and local controllers dial the CSMS.</summary>
         public IPPort  CSMSOCPPPort          => IPPort.Parse((UInt16) (BasePort + 5));

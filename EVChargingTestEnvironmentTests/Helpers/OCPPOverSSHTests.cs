@@ -398,7 +398,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             var station = NewStation();
 
-            Assert.That(station.Connections.TryAddAuthentication(TheServer, "basic", Login, password, out var authentication, out var error),
+            Assert.That(station.Connections.TryAddBasicAuthentication(Login, password, TheServer, out var authentication, out var error),
                         Is.True, error);
 
             Assert.That(station.Connections.TryAddConnection(TheServer,

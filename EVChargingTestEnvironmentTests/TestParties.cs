@@ -70,7 +70,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
                 configFile,
                 new JObject(
                     new JProperty("nts",         NoTimeServers),
-                    new JProperty("ocppServer",  new JObject(
+                    new JProperty("webSocketServer",  new JObject(
                         new JProperty("enabled",      false)
                     )),
                     new JProperty("ocpi",        new JObject(

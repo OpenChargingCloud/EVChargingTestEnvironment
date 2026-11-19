@@ -905,7 +905,7 @@ namespace cloud.charging.open.TestEnvironment
                            );
 
             if (!csmsFile.TryMergeSection(
-                     CSMSConfig.OCPPServerConfiguration.SectionName,
+                     protocols.OCPP.Node.Serving.WebSocketServerConfiguration.SectionName,
                      new JObject(
                          new JProperty("enabled",      true),
                          new JProperty("address",      Options.Address.ToString()),
@@ -914,12 +914,12 @@ namespace cloud.charging.open.TestEnvironment
 
                          // Written out rather than left at the default, and
                          // this is the field that decides whether the port is
-                         // encrypted at all: anything above 1 in it turns TLS
+                         // encrypted at all: a way over TLS in it turns TLS
                          // on. A port that is encrypted while the things below
                          // it dial ws:// answers them with a corrupted frame
                          // and no explanation, which is what this environment
                          // did until 2026-09-19.
-                         new JProperty("securityProfiles", new JArray(Options.OCPPSecurityProfiles))
+                         new JProperty("clientAuthentication", new JArray(Options.OCPPClientAuthentication))
                      ),
                      out var csmsError))
             {
@@ -958,13 +958,13 @@ namespace cloud.charging.open.TestEnvironment
                                      );
 
                 if (!controllerFile.TryMergeSection(
-                         protocols.OCPP.Node.Serving.OCPPServerConfiguration.SectionName,
+                         protocols.OCPP.Node.Serving.WebSocketServerConfiguration.SectionName,
                          new JObject(
                              new JProperty("enabled",      true),
                              new JProperty("address",      Options.Address.ToString()),
                              new JProperty("port",             Options.ControllerOCPPPort.ToUInt16()),
                              new JProperty("reachableAs",      new JArray(Options.Host, "localhost")),
-                             new JProperty("securityProfiles", new JArray(Options.OCPPSecurityProfiles))
+                             new JProperty("clientAuthentication", new JArray(Options.OCPPClientAuthentication))
                          ),
                          out var serverError))
                 {

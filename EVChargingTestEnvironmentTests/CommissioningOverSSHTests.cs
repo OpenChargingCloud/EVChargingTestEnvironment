@@ -48,6 +48,7 @@ using cloud.charging.open.protocols.OCPPv2_1.CS;
 using cloud.charging.open.protocols.OCPPv2_1.CSMS;
 
 using cloud.charging.open.protocols.WWCP.Node.Connections;
+using cloud.charging.open.protocols.WWCP.Node.Logins;
 
 using Station     = cloud.charging.open.ChargingStation.ChargingStation;
 using Management  = cloud.charging.open.CSMS.CSMS;
@@ -253,11 +254,11 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
                        File.WriteAllText(configFile, new JObject(
                            new JProperty("nts",         TestParties.NoTimeServers),
-                           new JProperty("ocppServer",  new JObject(
+                           new JProperty("webSocketServer",  new JObject(
                                new JProperty("enabled",           true),
                                new JProperty("address",           "127.0.0.1"),
                                new JProperty("port",              TestPorts.Free()),
-                               new JProperty("securityProfiles",  new JArray(1)),
+                               new JProperty("clientAuthentication",  new JArray("httpAuthWithoutTLS")),
                                new JProperty("subprotocols",      new JArray("ocpp2.1", "ocpp2.0.1")),
                                new JProperty("ssh",               new JObject(new JProperty("enabled", true)))
                            )),
@@ -399,9 +400,9 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
                     const String password = "a-password-long-enough-for-ocpp";
 
-                    Assert.That(CSMS.StationLogins.TrySetPassword(StationLogin, password, null, "tests", out _, out var error), Is.True, error);
+                    Assert.That(CSMS.WebSocketLogins.TrySetPassword(StationLogin, password, null, "tests", out var error), Is.True, error);
 
-                    Assert.That(first.Connections.TryAddAuthentication("The CSMS", "basic", StationLogin, password, out var authentication, out error),
+                    Assert.That(first.Connections.TryAddBasicAuthentication(StationLogin, password, "The CSMS", out var authentication, out error),
                                 Is.True, error);
 
                     Assert.That(first.Connections.TryAddConnection("The CSMS over a WebSocket",
@@ -460,7 +461,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
         /// The name of the station's OCPP 2.1 node, which a tool talks to.
         /// </summary>
         private String StationNodeId
-            => TheStation.CommissioningJSON()["station"]!.Value<String>()!;
+            => TheStation.CommissioningJSON()["node"]!.Value<String>()!;
 
         /// <summary>
         /// The station's OCPP 2.1 node, which the station keeps to itself: for
@@ -690,7 +691,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
                 Assert.That(TheStation.CommissioningTools.Select(id => id.ToString()), Is.EqualTo(new[] { Installer }),
                             "The tool is not known by its account's name.");
 
-                Assert.That(TheStation.SSHSessions.Any(session => session.Account == Installer && session.Label == Station.CommissioningLabel), Is.True,
+                Assert.That(TheStation.SSHSessions.Any(session => session.Account == Installer && session.Label == Station.OCPPOverSSHLabel), Is.True,
                             "The station's SSH server does not say what the installer's session is for.");
 
             });

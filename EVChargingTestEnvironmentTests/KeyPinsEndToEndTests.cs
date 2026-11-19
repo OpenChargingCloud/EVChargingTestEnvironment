@@ -31,6 +31,7 @@ using cloud.charging.open.protocols.WWCP.Node.TestKit;
 
 using cloud.charging.open.protocols.WWCP.Node.Connections;
 using cloud.charging.open.protocols.OCPP.Node.Serving;
+using cloud.charging.open.protocols.WWCP.Node.Logins;
 
 using WWCPNode    = cloud.charging.open.protocols.WWCP.Node.WWCPNode;
 using Management  = cloud.charging.open.CSMS.CSMS;
@@ -209,11 +210,11 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             File.WriteAllText(configFile, new JObject(
                 new JProperty("nts",         TestParties.NoTimeServers),
-                new JProperty("ocppServer",  new JObject(
+                new JProperty("webSocketServer",  new JObject(
                     new JProperty("enabled",           true),
                     new JProperty("address",           "127.0.0.1"),
                     new JProperty("port",              TestPorts.Free()),
-                    new JProperty("securityProfiles",  new JArray(1)),
+                    new JProperty("clientAuthentication",  new JArray("httpAuthWithoutTLS")),
                     new JProperty("subprotocols",      new JArray("ocpp2.1"))
                 ))
             ).ToString());
@@ -227,11 +228,11 @@ namespace cloud.charging.open.TestEnvironment.Tests
                                  BridgeDebugLog:  false
                              );
 
-            Assert.That(management.StationLogins.TrySetPassword(ControllerId, UplinkPassword, null, "tests", out _, out var error), Is.True, error);
+            Assert.That(management.WebSocketLogins.TrySetPassword(ControllerId, UplinkPassword, null, "tests", out var error), Is.True, error);
 
             // A local controller's login: what it forwards in the name of the
             // stations behind it is taken, which a station's would not be.
-            Assert.That(management.StationLogins.TrySetLocalController(ControllerId, true, out var markError), Is.True, markError);
+            Assert.That(management.WebSocketLogins.TrySetLocalController(ControllerId, true, out var markError), Is.True, markError);
 
             return management;
 
@@ -258,11 +259,11 @@ namespace cloud.charging.open.TestEnvironment.Tests
                     new JProperty("reconnectInitialDelay",  1),
                     new JProperty("reconnectMaxDelay",      2)
                 )),
-                new JProperty("ocppServer",  new JObject(
+                new JProperty("webSocketServer",  new JObject(
                     new JProperty("enabled",           true),
                     new JProperty("address",           "127.0.0.1"),
                     new JProperty("port",              TestPorts.Free()),
-                    new JProperty("securityProfiles",  new JArray(2)),
+                    new JProperty("clientAuthentication",  new JArray("httpAuthOverTLS")),
                     new JProperty("subprotocols",      new JArray("ocpp2.1"))
                 ))
             ).ToString());
@@ -279,7 +280,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
             Assert.That(localController.Node.Id.ToString(), Is.EqualTo(ControllerId));
 
             Assert.That(localController.TrySetUplinkPassword(ControllerId, UplinkPassword, out var uplinkError),                     Is.True, uplinkError);
-            Assert.That(localController.StationLogins.TrySetPassword(StationId,    StationPassword, null, "tests", out _, out var loginError), Is.True, loginError);
+            Assert.That(localController.WebSocketLogins.TrySetPassword(StationId,    StationPassword, null, "tests", out var loginError), Is.True, loginError);
 
             return localController;
 
@@ -341,7 +342,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             Assert.That(station.Connections.TryAddPinSetSigner(csmsSigner, "The CSMS", out var signerError, out _), Is.True, signerError);
 
-            Assert.That(station.Connections.TryAddAuthentication("The local controller", "basic", StationId, StationPassword, out var authentication, out var error),
+            Assert.That(station.Connections.TryAddBasicAuthentication(StationId, StationPassword, "The local controller", out var authentication, out var error),
                         Is.True, error);
 
             Assert.That(station.Connections.TryAddConnection("The local controller",

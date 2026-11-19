@@ -23,10 +23,11 @@ using System.Security.Cryptography;
 using Newtonsoft.Json.Linq;
 
 using cloud.charging.open.protocols.WWCP.Node.Certificates;
+using cloud.charging.open.protocols.WWCP.Node.Logins;
 
 using Vehicle       = cloud.charging.open.EV.EV;
-using CSMSStore     = cloud.charging.open.CSMS.OCPP;
 using ControlStore  = cloud.charging.open.protocols.OCPP.Node.Serving;
+using LoginsStore = cloud.charging.open.protocols.WWCP.Node.Logins;
 
 #endregion
 
@@ -53,7 +54,7 @@ namespace cloud.charging.open.TestEnvironment
         public const String  ControllerNodeId  = "LC001";
 
         /// <summary>The group a station's login belongs to, where the store keeps groups.</summary>
-        private const String LoginGroup        = "default";
+        private const String WebSocketLoginGroup        = "default";
 
         #endregion
 
@@ -94,7 +95,7 @@ namespace cloud.charging.open.TestEnvironment
             #region The CSMS: something to listen with, and whom it believes
 
             var csmsServes = EnsureServerCertificate(
-                                 CSMS.ServerCertificates,
+                                 CSMS,
                                  $"CN=csms.test.local, O=EV Charging Test Environment, C=DE",
                                  [ options.Host, "localhost", "csms.test.local" ],
                                  "CSMS"
@@ -167,15 +168,15 @@ namespace cloud.charging.open.TestEnvironment
             {
 
                 // The station dials the controller...
-                AllowStation(Controller.StationLogins, StationNodeId, stationSecret, "LC");
+                AllowStation(Controller.WebSocketLogins, StationNodeId, stationSecret, "LC");
 
                 // ...and the controller dials the CSMS.
-                AllowStation(CSMS.StationLogins, ControllerNodeId, controllerSecret, "CSMS");
+                AllowStation(CSMS.WebSocketLogins, ControllerNodeId, controllerSecret, "CSMS");
 
                 // ...in the name of the station behind it, which a login may
                 // only where it is marked as a local controller's: a frame of
                 // any other login in another station's name is dropped.
-                if (!CSMS.StationLogins.TrySetLocalController(ControllerNodeId, true, out var markError))
+                if (!CSMS.WebSocketLogins.TrySetLocalController(ControllerNodeId, true, out var markError))
                     throw new InvalidOperationException($"CSMS: '{ControllerNodeId}' could not be marked as a local controller: {markError}");
 
                 DialTheCSMS(controllerSecret);
@@ -184,7 +185,7 @@ namespace cloud.charging.open.TestEnvironment
 
             else
                 // No controller in the middle: the station dials the CSMS itself.
-                AllowStation(CSMS.StationLogins, StationNodeId, stationSecret, "CSMS");
+                AllowStation(CSMS.WebSocketLogins, StationNodeId, stationSecret, "CSMS");
 
             DialUpwards(stationSecret);
 
@@ -364,7 +365,7 @@ namespace cloud.charging.open.TestEnvironment
 
         #endregion
 
-        #region (private) EnsureServerCertificate(Store, Subject, ReachableAs, Whose)
+        #region (private) EnsureServerCertificate(Node, Subject, ReachableAs, Whose)
 
         /// <summary>
         /// A key, a signing request, a certificate signed by this environment's
@@ -387,43 +388,12 @@ namespace cloud.charging.open.TestEnvironment
         /// than found out in a handshake, and the answer is what the console
         /// says.
         /// </para>
-        /// </remarks>
-        private Boolean EnsureServerCertificate(CSMSStore.ServerCertificateStore  Store,
-                                                String                            Subject,
-                                                IEnumerable<String>               ReachableAs,
-                                                String                            Whose)
-        {
-
-            if (!Store.HasCertificate)
-            {
-
-                if (!Store.TryCreateKey(Subject, ReachableAs, null, out _, out var csr, out var keyError))
-                    throw new InvalidOperationException($"{Whose}: a server key could not be made: {keyError}");
-
-                if (!Store.TryAddCertificate(Certificates.OCPP.SignServer(csr), ReachableAs, out _, out var warnings, out var certError))
-                    throw new InvalidOperationException($"{Whose}: the signed server certificate was refused: {certError}");
-
-                foreach (var warning in warnings)
-                    Console.Say(Whose, $"Server certificate: {warning}");
-
-            }
-
-            return Store.Select()?.TryCreateContext(out _, out _) == true;
-
-        }
-
-        #endregion
-
-        #region (private) EnsureServerCertificate(Node, Subject, ReachableAs, Whose) - the local controller's station port
-
-        /// <summary>
-        /// The same again for the local controller, whose station port shows
-        /// a TLS server identity of the node's own certificate store: one told
-        /// the listener "ocpp".
-        /// </summary>
-        /// <remarks>
-        /// Left alone where the store already holds one for that listener -
-        /// from an earlier start, or a server key a test made there first.
+        /// <para>
+        /// A TLS server identity of the node's own certificate store, told the
+        /// listener "ocpp" - the CSMS's and the local controller's alike - and
+        /// left alone where the store already holds one for that listener: from
+        /// an earlier start, or a server key a test made there first.
+        /// </para>
         /// </remarks>
         private Boolean EnsureServerCertificate(protocols.OCPP.Node.OCPPServingNode  Node,
                                                 String                        Subject,
@@ -467,21 +437,6 @@ namespace cloud.charging.open.TestEnvironment
         /// Whose client certificates this end may believe: this environment's
         /// OCPP root, and nothing else.
         /// </summary>
-        private void EnsureTrustAnchor(CSMSStore.ClientTrustStore Store, String Whose)
-        {
-
-            if (Store.Entries.Count > 0)
-                return;
-
-            if (!Store.TryAdd(Certificates.OCPP.RootTrustPEM, "EV Charging Test Environment OCPP Root", out _, out var warnings, out var error))
-                throw new InvalidOperationException($"{Whose}: the OCPP root was refused as a trust anchor: {error}");
-
-            foreach (var warning in warnings)
-                Console.Say(Whose, $"Client trust: {warning}");
-
-        }
-
-        /// <summary>The same again for the local controller's store.</summary>
         private void EnsureTrustAnchor(ControlStore.ClientTrustStore Store, String Whose)
         {
 
@@ -566,54 +521,25 @@ namespace cloud.charging.open.TestEnvironment
         /// <summary>
         /// Write down who may sign in at an OCPP port, and with what.
         /// </summary>
-        private void AllowStation(CSMSStore.ChargingStationLogins  Logins,
-                                  String                           Id,
-                                  String                           Secret,
-                                  String                           Whose)
-        {
-
-            // Every method and every security profile, which is what a test
-            // environment is for: what is actually used is decided by the
-            // connection at the other end, and a group that allowed only what
-            // is used today would have to be edited before anything else could
-            // be tried.
-            if (!Logins.TryAddOrUpdateGroup(
-                     LoginGroup,
-                     "Everything in this test environment",
-                     Enabled:           true,
-                     AuthMethods:       [ CSMSStore.AuthMethod.Basic, CSMSStore.AuthMethod.TOTP, CSMSStore.AuthMethod.Certificate ],
-                     SecurityProfiles:  [ (Byte) 1, (Byte) 2, (Byte) 3 ],
-                     Note:              "Made by the test environment",
-                     out var groupError))
-            {
-                throw new InvalidOperationException($"{Whose}: the login group could not be made: {groupError}");
-            }
-
-            if (!Logins.TrySetPassword(Id, Secret, LoginGroup, "Set up by the test environment", out _, out var error))
-                throw new InvalidOperationException($"{Whose}: '{Id}' could not be allowed in: {error}");
-
-        }
-
-        /// <summary>The same again for the local controller's store.</summary>
-        private void AllowStation(ControlStore.ChargingStationLogins  Logins,
+        private void AllowStation(LoginsStore.WebSocketLogins         Logins,
                                   String                              Id,
                                   String                              Secret,
                                   String                              Whose)
         {
 
             if (!Logins.TryAddOrUpdateGroup(
-                     LoginGroup,
+                     WebSocketLoginGroup,
                      "Everything in this test environment",
                      Enabled:           true,
-                     AuthMethods:       [ ControlStore.AuthMethod.Basic, ControlStore.AuthMethod.TOTP, ControlStore.AuthMethod.Certificate ],
-                     SecurityProfiles:  [ (Byte) 1, (Byte) 2, (Byte) 3 ],
+                     AuthMethods:       [ LoginsStore.AuthMethod.Basic, LoginsStore.AuthMethod.TOTP, LoginsStore.AuthMethod.Certificate ],
+                     ClientAuthentication:  [ WebSocketClientAuthentication.HTTPAuthWithoutTLS, WebSocketClientAuthentication.HTTPAuthOverTLS, WebSocketClientAuthentication.TLSClientCertificate ],
                      Note:              "Made by the test environment",
                      out var groupError))
             {
                 throw new InvalidOperationException($"{Whose}: the login group could not be made: {groupError}");
             }
 
-            if (!Logins.TrySetPassword(Id, Secret, LoginGroup, "Set up by the test environment", out _, out var error))
+            if (!Logins.TrySetPassword(Id, Secret, WebSocketLoginGroup, "Set up by the test environment", out var error))
                 throw new InvalidOperationException($"{Whose}: '{Id}' could not be allowed in: {error}");
 
         }
@@ -658,11 +584,10 @@ namespace cloud.charging.open.TestEnvironment
                 Station.Connections.TryRemoveAuthentication(existing.Id, out _);
             }
 
-            if (!Station.Connections.TryAddAuthentication(
-                     description,
-                     "basic",
+            if (!Station.Connections.TryAddBasicAuthentication(
                      StationNodeId,
                      Secret,
+                     description,
                      out var authenticationId,
                      out var authenticationError))
             {
@@ -722,11 +647,10 @@ namespace cloud.charging.open.TestEnvironment
                 Controller.Connections.TryRemoveAuthentication(existing.Id, out _);
             }
 
-            if (!Controller.Connections.TryAddAuthentication(
-                     description,
-                     "basic",
+            if (!Controller.Connections.TryAddBasicAuthentication(
                      ControllerNodeId,
                      Secret,
+                     description,
                      out var authenticationId,
                      out var authenticationError))
             {

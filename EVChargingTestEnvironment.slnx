@@ -4,7 +4,17 @@
     <Project Path="libs/WWCP_OCPI/WWCP_OCPIv2.1.1/WWCP_OCPIv2.1.1.csproj" />
     <Project Path="libs/WWCP_OCPI/WWCP_OCPIv2.2.1/WWCP_OCPIv2.2.1.csproj" />
     <Project Path="libs/WWCP_OCPI/WWCP_OCPIv2.3.0/WWCP_OCPIv2.3.0.csproj" />
+    <Project Path="libs/WWCP_OCPI/WWCP_OCPIv2.3.0_Adapter/WWCP_OCPIv2.3.0_Adapter.csproj" />
+    <Project Path="libs/WWCP_OCPI/WWCP_OCPIv2.3.0_Tests/WWCP_OCPIv2.3.0_Tests.csproj" />
+    <Project Path="libs/WWCP_OCPI/WWCP_OCPIv2.3.0_WebAPI/WWCP_OCPIv2.3.0_WebAPI.csproj" />
     <Project Path="libs/WWCP_OCPI/WWCP_OCPI_Common/WWCP_OCPI_Common.csproj" />
+    <Project Path="libs/WWCP_OCPI/WWCP_OCPI_Common_WebAPI/WWCP_OCPI_Common_WebAPI.csproj" />
+  </Folder>
+  <Folder Name="/Dependencies/DatexII/">
+    <Project Path="libs/WWCP_DatexII/WWCP_DatexII/WWCP_DatexII.csproj" />
+    <Project Path="libs/WWCP_DatexII/WWCP_DatexII_Adapter/WWCP_DatexII_Adapter.csproj" />
+    <Project Path="libs/WWCP_DatexII/WWCP_DatexII_Tests/WWCP_DatexII_Tests.csproj" />
+    <Project Path="libs/WWCP_DatexII/WWCP_DatexII_WebAPI/WWCP_DatexII_WebAPI.csproj" />
   </Folder>
   <Folder Name="/Dependencies/Entities/" />
   <Folder Name="/Dependencies/Entities/ChargingStation/">
@@ -14,6 +24,10 @@
   <Folder Name="/Dependencies/Entities/CSMS/">
     <Project Path="libs/CSMS/CSMS/CSMS.csproj" />
     <Project Path="libs/CSMS/CSMSTests/CSMSTests.csproj" />
+  </Folder>
+  <Folder Name="/Dependencies/Entities/DNSServer/">
+    <Project Path="libs/DNSServer/DNSServer/DNSServer.csproj" />
+    <Project Path="libs/DNSServer/DNSServerTests/DNSServerTests.csproj" />
   </Folder>
   <Folder Name="/Dependencies/Entities/EMSP/">
     <Project Path="libs/EMSP/EMSP/EMSP.csproj" />
@@ -85,6 +99,29 @@
     <Project Path="libs/WWCP_ISO15118/WWCP_ISO15118_V2GTP_Tests/WWCP_ISO15118_V2GTP_Tests.csproj" />
     <Project Path="libs/WWCP_ISO15118/WWCP_ISO15118_XMLDSig/WWCP_ISO15118_XMLDSig.csproj" />
   </Folder>
+  <Folder Name="/Dependencies/OCPP/">
+    <Project Path="libs/WWCP_OCPP/WWCP_OCPPv1.6/WWCP_OCPPv1.6.csproj" />
+    <Project Path="libs/WWCP_OCPP/WWCP_OCPPv1.6_Adapter/WWCP_OCPPv1.6_Adapter.csproj" />
+    <Project Path="libs/WWCP_OCPP/WWCP_OCPPv1.6_CentralSystem/WWCP_OCPPv1.6_CentralSystem.csproj" />
+    <Project Path="libs/WWCP_OCPP/WWCP_OCPPv1.6_ChargePoint/WWCP_OCPPv1.6_ChargePoint.csproj" />
+    <Project Path="libs/WWCP_OCPP/WWCP_OCPPv1.6_LocalController/WWCP_OCPPv1.6_LocalController.csproj" />
+    <Project Path="libs/WWCP_OCPP/WWCP_OCPPv1.6_Tests/WWCP_OCPPv1.6_Tests.csproj" />
+    <Project Path="libs/WWCP_OCPP/WWCP_OCPPv2.1/WWCP_OCPPv2.1.csproj" />
+    <Project Path="libs/WWCP_OCPP/WWCP_OCPPv2.1_Adapter/WWCP_OCPPv2.1_Adapter.csproj" />
+    <Project Path="libs/WWCP_OCPP/WWCP_OCPPv2.1_BatterySwapStation/WWCP_OCPPv2.1_BatterySwapStation.csproj" />
+    <Project Path="libs/WWCP_OCPP/WWCP_OCPPv2.1_ChargingStation/WWCP_OCPPv2.1_ChargingStation.csproj" />
+    <Project Path="libs/WWCP_OCPP/WWCP_OCPPv2.1_CommissioningService/WWCP_OCPPv2.1_CommissioningService.csproj" />
+    <Project Path="libs/WWCP_OCPP/WWCP_OCPPv2.1_CSMS/WWCP_OCPPv2.1_CSMS.csproj" />
+    <Project Path="libs/WWCP_OCPP/WWCP_OCPPv2.1_EnergyMeter/WWCP_OCPPv2.1_EnergyMeter.csproj" />
+    <Project Path="libs/WWCP_OCPP/WWCP_OCPPv2.1_Gateway/WWCP_OCPPv2.1_Gateway.csproj" />
+    <Project Path="libs/WWCP_OCPP/WWCP_OCPPv2.1_LocalController/WWCP_OCPPv2.1_LocalController.csproj" />
+    <Project Path="libs/WWCP_OCPP/WWCP_OCPPv2.1_Tests/WWCP_OCPPv2.1_Tests.csproj" />
+    <Project Path="libs/WWCP_OCPP/WWCP_OCPPv2.1_TimeServer/WWCP_OCPPv2.1_TimeServer.csproj" />
+    <Project Path="libs/WWCP_OCPP/WWCP_OCPP_Common/WWCP_OCPP_Common.csproj" />
+    <Project Path="libs/WWCP_OCPP/WWCP_OCPP_Node/WWCP_OCPP_Node.csproj" />
+    <Project Path="libs/WWCP_OCPP/WWCP_OCPP_Node_TestKit/WWCP_OCPP_Node_TestKit.csproj" />
+    <Project Path="libs/WWCP_OCPP/WWCP_OCPP_Node_Tests/WWCP_OCPP_Node_Tests.csproj" />
+  </Folder>
   <Folder Name="/Dependencies/Vanaheimr/">
     <Project Path="libs/Hermod/Hermod/Hermod.csproj" />
     <Project Path="libs/Hermod/HermodTests/HermodTests.csproj" />
@@ -93,11 +130,40 @@
   </Folder>
   <Folder Name="/Dependencies/Vanaheimr/Norn/">
     <Project Path="libs/Norn/Norn/Norn.csproj" />
+    <Project Path="libs/Norn/NornCLI/NornCLI.csproj" />
+    <Project Path="libs/Norn/NornHTTPAPI/NornHTTPAPI.csproj" />
     <Project Path="libs/Norn/NornTests/NornTests.csproj" />
+    <Project Path="libs/Norn/NornTimings/NornTimings.csproj" />
+    <Project Path="libs/Norn/NornWebAPI/NornWebAPI.csproj" />
   </Folder>
   <Folder Name="/Dependencies/Vanaheimr/Urdr/">
     <Project Path="libs/Urdr/Urdr/Urdr.csproj" />
     <Project Path="libs/Urdr/UrdrTests/UrdrTests.csproj" />
+  </Folder>
+  <Folder Name="/Dependencies/WWCP/" />
+  <Folder Name="/Dependencies/WWCP/Core/">
+    <Project Path="libs/WWCP_Core/WWCP_Core/WWCP_Core.csproj" />
+    <Project Path="libs/WWCP_Core/WWCP_CoreData/WWCP_CoreData.csproj" />
+    <Project Path="libs/WWCP_Core/WWCP_Core_Tests/WWCP_Core_Tests.csproj" />
+    <Project Path="libs/WWCP_Core/WWCP_HTTPAPI/WWCP_HTTPAPI.csproj" />
+    <Project Path="libs/WWCP_Core/WWCP_Node/WWCP_Node.csproj" />
+    <Project Path="libs/WWCP_Core/WWCP_OverlayNetworking/WWCP_OverlayNetworking.csproj" />
+    <Project Path="libs/WWCP_Core/WWCP_OverlayNetworking2/WWCP_OverlayNetworking2.csproj" />
+    <Project Path="libs/WWCP_Core/WWCP_OverlayNetworking_Tests/WWCP_OverlayNetworking_Tests.csproj" />
+    <Project Path="libs/WWCP_Core/WWCP_WebAPI/WWCP_WebAPI.csproj" />
+  </Folder>
+  <Folder Name="/Dependencies/WWCP/Node/">
+    <Project Path="libs/WWCP_Node/WWCP_Node/WWCP_Node.csproj" />
+    <Project Path="libs/WWCP_Node/WWCP_Node_TestKit/WWCP_Node_TestKit.csproj" />
+    <Project Path="libs/WWCP_Node/WWCP_Node_Tests/WWCP_Node_Tests.csproj" />
+  </Folder>
+  <Folder Name="/Dependencies/WWCP/POI/">
+    <Project Path="libs/WWCP_POI/WWCP_POI2/WWCP_POI2.csproj" />
+    <Project Path="libs/WWCP_POI/WWCP_POI2_Tests/WWCP_POI2_Tests.csproj" />
+    <Project Path="libs/WWCP_POI/WWCP_POI3/WWCP_POI3.csproj" />
+    <Project Path="libs/WWCP_POI/WWCP_POI3_EVTaler/WWCP_POI3_EVTaler.csproj" />
+    <Project Path="libs/WWCP_POI/WWCP_POI3_LoadTests/WWCP_POI3_LoadTests.csproj" />
+    <Project Path="libs/WWCP_POI/WWCP_POI3_Tests/WWCP_POI3_Tests.csproj" />
   </Folder>
   <Project Path="EVChargingTestEnvironment/EVChargingTestEnvironment.csproj" />
   <Project Path="EVChargingTestEnvironmentTests/EVChargingTestEnvironmentTests.csproj" />

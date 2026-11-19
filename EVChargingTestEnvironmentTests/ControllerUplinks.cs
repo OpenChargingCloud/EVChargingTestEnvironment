@@ -60,7 +60,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
                                                    out String?      Error)
         {
 
-            if (!Controller.Connections.TryAddAuthentication("The password of the line up", "basic", Login, Password, out var id, out Error))
+            if (!Controller.Connections.TryAddBasicAuthentication(Login, Password, "The password of the line up", out var id, out Error))
                 return false;
 
             if (Controller.Uplink() is not ConnectionEntry line)

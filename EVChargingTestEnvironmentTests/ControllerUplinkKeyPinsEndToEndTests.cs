@@ -28,13 +28,14 @@ using org.GraphDefined.Vanaheimr.Hermod;
 using org.GraphDefined.Vanaheimr.Hermod.DNS;
 
 using cloud.charging.open.protocols.WWCP.Node.KeyPins;
+using cloud.charging.open.protocols.WWCP.Node.Certificates;
 using cloud.charging.open.protocols.WWCP.Node.Configuration;
 using cloud.charging.open.protocols.WWCP.Node.TestKit;
+using cloud.charging.open.protocols.WWCP.Node.Logins;
 
 using WWCPNode          = cloud.charging.open.protocols.WWCP.Node.WWCPNode;
 using Management        = cloud.charging.open.CSMS.CSMS;
 using Controller        = cloud.charging.open.LocalController.LocalController;
-using CSMSCertificates  = cloud.charging.open.CSMS.OCPP.ServerCertificateStore;
 
 #endregion
 
@@ -159,19 +160,38 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             ca           = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(365));
 
-            using var store = new CSMSCertificates(Path.Combine(Directory, CSMSCertificates.DefaultDirectoryName));
+            // The station port is the listener "ocpp" of the node's store,
+            // "certificates" beside the CSMS's configuration file.
+            var store = new CertificateStore(
+                            Path.Combine(Directory, CertificatesConfiguration.DefaultDirectory),
+                            new cloud.charging.open.protocols.WWCP.Node.Logging.EventLog(),
+                            NodeName:      "CSMS",
+                            Listeners:     [ cloud.charging.open.protocols.OCPP.Node.OCPPServingNode.StationListener ],
+                            RequestKinds:  [ CertificateKind.TLSServerIdentity ]
+                        );
 
-            Assert.That(store.TryCreateKey("127.0.0.1", [ "127.0.0.1" ], null, out _, out var csr, out var error), Is.True, error);
+            store.Reload();
 
-            using var certificate = CertificateRequest.LoadSigningRequestPem(csr!, HashAlgorithmName.SHA256, CertificateRequestLoadOptions.UnsafeLoadCertificateExtensions).
+            Assert.That(store.TryCreateRequest(CertificateKind.TLSServerIdentity,
+                                               "CN=127.0.0.1",
+                                               null,
+                                               new CertificateRequestAsks(ReachableAs: [ "127.0.0.1" ]),
+                                               [ cloud.charging.open.protocols.OCPP.Node.OCPPServingNode.StationListener ],
+                                               null,
+                                               out var csmsRequest,
+                                               out var error,
+                                               out _),
+                        Is.True, error);
+
+            using var certificate = CertificateRequest.LoadSigningRequestPem(csmsRequest!.CSR, HashAlgorithmName.SHA256, CertificateRequestLoadOptions.UnsafeLoadCertificateExtensions).
                                         Create(ca.SubjectName,
                                                X509SignatureGenerator.CreateForECDsa(caKey),
                                                DateTimeOffset.UtcNow.AddDays(-1),
                                                DateTimeOffset.UtcNow.AddDays(30),
                                                Guid.NewGuid().ToByteArray());
 
-            Assert.That(store.TryAddCertificate(certificate.ExportCertificatePem() + Environment.NewLine + ca.ExportCertificatePem(),
-                                                [ "127.0.0.1" ], out _, out _, out error),
+            Assert.That(store.TryAnswerRequest(certificate.ExportCertificatePem() + Environment.NewLine + ca.ExportCertificatePem(),
+                                               out _, out _, out _, out error, out _),
                         Is.True, error);
 
         }
@@ -193,11 +213,11 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
                        File.WriteAllText(configFile, new JObject(
                            new JProperty("nts",         TestParties.NoTimeServers),
-                           new JProperty("ocppServer",  new JObject(
+                           new JProperty("webSocketServer",  new JObject(
                                new JProperty("enabled",           true),
                                new JProperty("address",           "127.0.0.1"),
                                new JProperty("port",              TestPorts.Free()),
-                               new JProperty("securityProfiles",  new JArray(2)),
+                               new JProperty("clientAuthentication",  new JArray("httpAuthOverTLS")),
                                new JProperty("subprotocols",      new JArray("ocpp2.1"))
                            ))
                        ).ToString());
@@ -211,8 +231,8 @@ namespace cloud.charging.open.TestEnvironment.Tests
                                             BridgeDebugLog:  false
                                         );
 
-                       Assert.That(management.StationLogins.TrySetPassword       (ControllerId, UplinkPassword, null, "tests", out _, out var error), Is.True, error);
-                       Assert.That(management.StationLogins.TrySetLocalController(ControllerId, true, out var markError),                           Is.True, markError);
+                       Assert.That(management.WebSocketLogins.TrySetPassword       (ControllerId, UplinkPassword, null, "tests", out var error), Is.True, error);
+                       Assert.That(management.WebSocketLogins.TrySetLocalController(ControllerId, true, out var markError),                      Is.True, markError);
 
                        return management;
 
