@@ -42,6 +42,8 @@ using WWCPNode    = cloud.charging.open.protocols.WWCP.Node.WWCPNode;
 
 using org.GraphDefined.Vanaheimr.Illias;
 using org.GraphDefined.Vanaheimr.Hermod.HTTP;
+using cloud.charging.open.protocols.OCPPv2_1;
+using cloud.charging.open.protocols.OCPPv2_1.NetworkingNode;
 
 #endregion
 
@@ -255,7 +257,28 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             // Sent by no node by itself: asked for, as after a reboot.
             _ = chargingStation.SendBootNotifications();
 
+            var node21 = chargingStation.OCPPDialling.Node21;
+
+            var boot = await node21.OCPP.OUT.BootNotification(
+                           new protocols.OCPPv2_1.CS.BootNotificationRequest(
+                               Destination:      protocols.WWCP.NetworkingNode.SourceRouting.To(protocols.WWCP.NetworkingNode.NetworkingNode_Id.CSMS),
+                               ChargingStation:  new protocols.OCPPv2_1.ChargingStation(
+                                                     "Model",
+                                                     "Vendor"
+                                                 ),
+                               Reason:           BootReason.PowerUp,
+                               NetworkPath:      protocols.WWCP.NetworkingNode.NetworkPath.From(node21.Id)
+                           )
+                       );
+
             await Until(() => RegistrationOf(chargingStation)        == "Accepted",                  $"'{login}' being accepted by the CSMS",  chargingStation, csms);
+
+            var auth = await node21.OCPP.OUT.Authorize(
+                           new protocols.OCPPv2_1.CS.AuthorizeRequest(
+                               Destination:  protocols.WWCP.NetworkingNode.SourceRouting.To(protocols.WWCP.NetworkingNode.NetworkingNode_Id.CSMS),
+                               IdToken:      IdToken.TryParseRFID7("04A2B3C4D5E6F7")!
+                           )
+                       );
 
         }
 
