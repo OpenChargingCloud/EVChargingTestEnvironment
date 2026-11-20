@@ -77,9 +77,9 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
                                    SearchForIPv6DNSServers: false
                                );
 
-            // A local controller dials what its store says only where its
-            // section "csms" is switched on - for a node below as well.
-            var lcDirectory    = NewNodeDirectory("lc", ReportsUpwards());
+            // Without the section "csms": a node below is dialled all the
+            // same, whether the controller reports to a CSMS or not.
+            var lcDirectory    = NewNodeDirectory("lc");
 
             localController  = new LocalController.LocalController(
                                    DNSClient:        dnsClient,
