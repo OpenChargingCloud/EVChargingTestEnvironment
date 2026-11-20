@@ -77,7 +77,9 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
                                    SearchForIPv6DNSServers: false
                                );
 
-            var lcDirectory    = NewNodeDirectory("lc");
+            // A local controller dials what its store says only where its
+            // section "csms" is switched on - for a node below as well.
+            var lcDirectory    = NewNodeDirectory("lc", ReportsUpwards());
 
             localController  = new LocalController.LocalController(
                                    DNSClient:        dnsClient,
@@ -131,15 +133,12 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         #region WebSocket(Transport, Authentication)
 
         /// <summary>
-        /// A local controller dials only upwards - its CSMS, a local controller
-        /// or a gateway above it (ConnectionRules.BackEnds) - and talks to
-        /// what dials it as the node above: the one node that dials a
-        /// charging station is the CSMS (ConnectionRules.NodesBelow). So
-        /// there is nothing here to test until a local controller can dial
-        /// downwards, see CSMS_2_CS.
+        /// The local controller dials the charging station, as the CSMS does (see
+        /// CSMS_2_CS): every node dials downwards alike. The connection names
+        /// the charging station at its other end, which it is spoken to by;
+        /// the charging station lets it in with the login it signs in with.
         /// </summary>
         [TestCase("ws", authPassword)]
-        [Ignore("A local controller dials no charging station: only the CSMS dials downwards (ConnectionRules.NodesBelow).")]
         public async Task WebSocket(String  Transport,
                                     String  Authentication)
         {
@@ -158,6 +157,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
 
             var login        = "lc-" + RandomExtensions.RandomString(8);
+            var node         = chargingStation.Id?.ToString() ?? ChargingStation.ChargingStation.DefaultOCPP21NodeId;
             var description  = $"{localController.OCPP.NodeId} --({Transport}/{Authentication})--> {chargingStation.Id}";
 
             Assert.That(
@@ -169,12 +169,14 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
                      Credentials(localController, chargingStation, login, Authentication, description),
                      null,
                      out var connection,
-                     out var error
+                     out var error,
+                     RemoteNodeId: node
                 ),
                 Is.True, error
             );
 
             await Until(() => StatusOf(localController, connection!) == ConnectionStatus.Connected, $"'{login}' connecting over {Transport}", localController, chargingStation);
+            await Until(() => IsConnectedAt(chargingStation, login),                          $"'{login}' being let in by the charging station", localController, chargingStation);
 
 
             //var station = await AStationAtTheCSMS(Transport, "cs001");

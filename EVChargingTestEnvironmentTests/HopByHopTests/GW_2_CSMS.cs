@@ -169,6 +169,10 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             );
 
             await Until(() => StatusOf(gateway, connection!) == ConnectionStatus.Connected, $"'{login}' connecting over {Transport}", gateway, csms);
+
+            // Sent by no node by itself: asked for, as after a reboot.
+            _ = gateway.SendBootNotifications();
+
             await Until(() => RegistrationOf(gateway) == "Accepted",                       $"'{login}' being accepted by the CSMS", gateway, csms);
 
 

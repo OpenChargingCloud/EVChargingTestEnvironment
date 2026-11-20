@@ -251,6 +251,10 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             );
 
             await Until(() => StatusOf(chargingStation, connection!) == ConnectionStatus.Connected,  $"'{login}' connecting over webSocket",   chargingStation, csms);
+
+            // Sent by no node by itself: asked for, as after a reboot.
+            _ = chargingStation.SendBootNotifications();
+
             await Until(() => RegistrationOf(chargingStation)        == "Accepted",                  $"'{login}' being accepted by the CSMS",  chargingStation, csms);
 
         }
@@ -302,6 +306,10 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             );
 
             await Until(() => StatusOf(chargingStation, connection!) == ConnectionStatus.Connected,  $"'{login}' connecting over webSocket TLS", chargingStation, csms);
+
+            // Sent by no node by itself: asked for, as after a reboot.
+            _ = chargingStation.SendBootNotifications();
+
             await Until(() => RegistrationOf(chargingStation)        == "Accepted",                  $"'{login}' being accepted by the CSMS",    chargingStation, csms);
 
 
@@ -379,6 +387,10 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             await Until(() => StatusOf(chargingStation, connection!) == ConnectionStatus.Connected,  $"'{login}' connecting over webSocket mTLS", chargingStation, csms);
             await Until(() => IsConnectedAt(csms, login),                                            $"'{login}' being let in by its certificate", chargingStation, csms);
+
+            // Sent by no node by itself: asked for, as after a reboot.
+            _ = chargingStation.SendBootNotifications();
+
             await Until(() => RegistrationOf(chargingStation)        == "Accepted",                  $"'{login}' being accepted by the CSMS",     chargingStation, csms);
 
 

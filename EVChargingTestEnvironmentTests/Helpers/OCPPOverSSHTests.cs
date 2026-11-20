@@ -381,6 +381,10 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             await Until(() => StatusOf(station, connection) == ConnectionStatus.Connected, $"'{Login}' connecting over SSH",             station);
             await Until(() => IsConnectedOverSSH(Login),                                   $"'{Login}' being registered by {TheServer}", station);
+
+            // Sent by no node by itself: asked for, as after a reboot.
+            _ = station.SendBootNotifications();
+
             await Until(() => RegistrationOf(station) == "Accepted",                       $"'{Login}' being accepted by {TheServer}",   station);
 
             return (station, connection);
@@ -704,6 +708,10 @@ namespace cloud.charging.open.TestEnvironment.Tests
             var (sshStation,       sshConnection)       = await AStationConnected("cs-ssh");
 
             await Until(() => StatusOf(webSocketStation, webSocketConnection) == ConnectionStatus.Connected, "The WebSocket station connecting",     webSocketStation);
+
+            // Sent by no node by itself: asked for, as after a reboot.
+            _ = webSocketStation.SendBootNotifications();
+
             await Until(() => RegistrationOf(webSocketStation) == "Accepted",                                "The WebSocket station being accepted", webSocketStation);
 
             Assert.Multiple(() => {

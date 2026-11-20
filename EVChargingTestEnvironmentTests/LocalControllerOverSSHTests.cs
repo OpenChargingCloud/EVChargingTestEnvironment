@@ -102,6 +102,9 @@ namespace cloud.charging.open.TestEnvironment.Tests
             // machine took one before the controller could bind it.
             controller = await TestPorts.StartedOnFreshPorts(() => NewController(controllerDirectory, ControllerConfiguration()));
 
+            // Sent by no node by itself: asked for, as after a reboot.
+            _ = controller.SendBootNotifications();
+
             AnswersForTheCSMS(controller);
 
             Assert.That(controller.OCPPOverSSHServed, Is.True, "OCPP over SSH is switched on in the file, and not served.");
@@ -168,6 +171,9 @@ namespace cloud.charging.open.TestEnvironment.Tests
             controller = NewController(controllerDirectory, null, controllerHTTPPort);
             AnswersForTheCSMS(controller);
             await controller.Start();
+
+            // Sent by no node by itself: asked for, as after a reboot.
+            _ = controller.SendBootNotifications();
         }
 
         protected override async Task StopTheServers()
@@ -361,6 +367,9 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             controller = await TestPorts.StartedOnFreshPorts(() => NewController(controllerDirectory, ControllerConfiguration(CSMS)));
 
+            // Sent by no node by itself: asked for, as after a reboot.
+            _ = controller.SendBootNotifications();
+
             await Until(() => LC.CSMSConnected, "The controller connecting to its CSMS");
 
             var atTheCSMS = new ConcurrentQueue<String>();
@@ -432,6 +441,9 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             var (station, _)  = await AStationDialling("cs001");
 
+            // Sent by no node by itself: asked for, as after a reboot.
+            _ = station.SendBootNotifications();
+
             await Until(() => atTheCSMS.Contains("BootNotification"),  "The station's BootNotification reaching the CSMS", station);
             await Until(() => RegistrationOf(station) == "Accepted",   "The CSMS's answer reaching the station",           station);
 
@@ -468,6 +480,9 @@ namespace cloud.charging.open.TestEnvironment.Tests
             var atTheCSMS     = await AControllerReportingToACSMS();
 
             var (station, _)  = await AWebSocketStation("cs-ws");
+
+            // Sent by no node by itself: asked for, as after a reboot.
+            _ = station.SendBootNotifications();
 
             await Until(() => atTheCSMS.Contains("BootNotification"),  "The station's BootNotification reaching the CSMS", station);
             await Until(() => RegistrationOf(station) == "Accepted",   "The CSMS's answer reaching the station",           station);

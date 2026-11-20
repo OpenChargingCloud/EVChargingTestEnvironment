@@ -178,6 +178,10 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             );
 
             await Until(() => StatusOf(localController, connection!) == ConnectionStatus.Connected, $"'{login}' connecting over {Transport}", localController, csms);
+
+            // Sent by no node by itself: asked for, as after a reboot.
+            _ = localController.SendBootNotifications();
+
             await Until(() => RegistrationOf(localController) == "Accepted",                       $"'{login}' being accepted by the CSMS", localController, csms);
 
 

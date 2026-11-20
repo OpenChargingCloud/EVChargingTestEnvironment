@@ -135,6 +135,9 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             controller  = await TestPorts.StartedOnFreshPorts(() => NewController(controllerDirectory));
 
+            // Sent by no node by itself: asked for, as after a reboot.
+            _ = controller.SendBootNotifications();
+
             await Until(() => LC.CSMSConnected && CSMS.IsConnected(ControllerId) && CSMS.InOverlayNetwork(ControllerId),
                         "The controller connecting to its CSMS in the overlay network");
 
@@ -327,7 +330,12 @@ namespace cloud.charging.open.TestEnvironment.Tests
             var directory  = Path.GetDirectoryName(Station.ConfigFile.Path)!;
             var attempt    = 0;
 
-            return await TestPorts.StartedOnFreshPorts(() => attempt++ == 0 ? Station : NewStation(directory));
+            var started    = await TestPorts.StartedOnFreshPorts(() => attempt++ == 0 ? Station : NewStation(directory));
+
+            // Sent by no node by itself: asked for, as after a reboot.
+            _ = started.SendBootNotifications();
+
+            return started;
 
         }
 

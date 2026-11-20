@@ -1,0 +1,205 @@
+/*
+ * Copyright (c) 2014-2026 GraphDefined GmbH <achim.friedland@graphdefined.com>
+ * This file is part of the EV charging test environment
+ * <https://github.com/OpenChargingCloud/EVChargingTestEnvironment>
+ *
+ * Licensed under the Affero GPL license, Version 3.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.gnu.org/licenses/agpl.html
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+#region Usings
+
+using NUnit.Framework;
+
+using org.GraphDefined.Vanaheimr.Illias;
+using org.GraphDefined.Vanaheimr.Hermod;
+using org.GraphDefined.Vanaheimr.Hermod.DNS;
+using org.GraphDefined.Vanaheimr.Hermod.HTTP;
+
+using cloud.charging.open.protocols.WWCP.Node.TestKit;
+using cloud.charging.open.protocols.WWCP.Node.Connections;
+using cloud.charging.open.protocols.OCPP.Node;
+
+#endregion
+
+namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
+{
+
+    /// <summary>
+    /// A node that dials itself: a connection of its own store to its own
+    /// station port, signed in with a login of its own - a self-test of both
+    /// ends of a node at once. Every kind of node alike: a client and a
+    /// server of WebSockets are the same on each.
+    /// </summary>
+    [TestFixture]
+    public class ToItself : AHopByHopTest
+    {
+
+        #region Data
+
+        private DNSClient?        dnsClient;
+        private OCPPServingNode?  node;
+
+        #endregion
+
+        #region SetUp / TearDown
+
+        [SetUp]
+        public void MakeTheResolver()
+        {
+            dnsClient = new DNSClient(
+                            SearchForIPv6DNSServers: false
+                        );
+        }
+
+        [TearDown]
+        public async Task Stop()
+        {
+
+            if (node is not null)
+            {
+                await node.Stop();
+                await node.DisposeAsync();
+            }
+
+            node = null;
+
+        }
+
+        #endregion
+
+        #region (private) Started(Kind)
+
+        /// <summary>
+        /// A node of the given kind, with its station port switched on -
+        /// over TLS where the test dials over wss:// - and started.
+        /// </summary>
+        /// <param name="Kind">"cs", "lc", "gw" or "csms".</param>
+        private async Task<OCPPServingNode> Started(String Kind)
+        {
+
+            // A local controller has lines up only where it reports upwards.
+            var directory = Kind == "lc"
+                                ? NewServedNodeDirectory(Kind, ReportsUpwards())
+                                : NewServedNodeDirectory(Kind);
+
+            OCPPServingNode started = Kind switch {
+
+                "cs"    => new ChargingStation.ChargingStation(
+                               DNSClient:        dnsClient,
+                               HTTPPort:         IPPort.Parse(TestPorts.Free()),
+                               NoKiosk:          true,
+                               AccountsPath:     directory.Accounts,
+                               ConfigFile:       directory.ConfigFile,
+                               LogToConsole:     false,
+                               BridgeDebugLog:   false
+                           ),
+
+                "lc"    => new LocalController.LocalController(
+                               DNSClient:        dnsClient,
+                               HTTPPort:         IPPort.Parse(TestPorts.Free()),
+                               AccountsPath:     directory.Accounts,
+                               ConfigFile:       directory.ConfigFile,
+                               LogToConsole:     false,
+                               BridgeDebugLog:   false
+                           ),
+
+                "gw"    => new Gateway.Gateway(
+                               DNSClient:        dnsClient,
+                               HTTPPort:         IPPort.Parse(TestPorts.Free()),
+                               AccountsPath:     directory.Accounts,
+                               ConfigFile:       directory.ConfigFile,
+                               LogToConsole:     false,
+                               BridgeDebugLog:   false
+                           ),
+
+                "csms"  => new CSMS.CSMS(
+                               DNSClient:        dnsClient,
+                               HTTPPort:         IPPort.Parse(TestPorts.Free()),
+                               AccountsPath:     directory.Accounts,
+                               ConfigFile:       directory.ConfigFile,
+                               LogToConsole:     false,
+                               BridgeDebugLog:   false
+                           ),
+
+                _       => throw new ArgumentException($"'{Kind}' is no kind of node these tests know.", nameof(Kind))
+
+            };
+
+            node = started;
+
+            await started.Start();
+
+            return started;
+
+        }
+
+        #endregion
+
+
+        #region WebSocket(Kind, Transport, Authentication)
+
+        /// <summary>
+        /// The node dials its own station port, as its back end, with a login
+        /// of its own: it is connected as the one that dials, and let in as
+        /// the one that is dialled.
+        /// </summary>
+        [TestCase("cs",   "ws",  authPassword)]
+        [TestCase("cs",   "wss", authPassword)]
+        [TestCase("cs",   "ws",  authTOTP)]
+        [TestCase("lc",   "ws",  authPassword)]
+        [TestCase("lc",   "wss", authPassword)]
+        [TestCase("lc",   "ws",  authTOTP)]
+        [TestCase("gw",   "ws",  authPassword)]
+        [TestCase("gw",   "wss", authPassword)]
+        [TestCase("gw",   "ws",  authTOTP)]
+        [TestCase("csms", "ws",  authPassword)]
+        [TestCase("csms", "wss", authPassword)]
+        [TestCase("csms", "ws",  authTOTP)]
+        public async Task WebSocket(String  Kind,
+                                    String  Transport,
+                                    String  Authentication)
+        {
+
+            var itself       = await Started(Kind);
+
+            var login        = "self-" + RandomExtensions.RandomString(8);
+            var description  = $"{itself.NodeNoun} --({Transport}/{Authentication})--> itself";
+
+            var credentials  = Credentials(itself, itself, login, Authentication, description);
+
+            BelievesTheTestCA(itself);
+
+            Assert.That(
+                itself.Connections.TryAddConnection(
+                     I18NString.Create(description),
+                     URL.Parse($"{Transport}://{login}@127.0.0.1:{itself.OCPPServerSettings.TCPPort}"),
+                     "CSMS",
+                     true,
+                     credentials,
+                     null,
+                     out var connection,
+                     out var error
+                ),
+                Is.True, error
+            );
+
+            await Until(() => StatusOf(itself, connection!) == ConnectionStatus.Connected,  $"'{login}' dialling over {Transport}",           itself);
+            await Until(() => IsConnectedAt(itself, login),                                 $"'{login}' being let in by the node it dialled",  itself);
+
+        }
+
+        #endregion
+
+    }
+
+}

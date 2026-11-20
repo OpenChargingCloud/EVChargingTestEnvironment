@@ -446,6 +446,9 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             if (Uplink is not null)
             {
+                // Sent by no node by itself: asked for, as after a reboot.
+                _ = station.SendBootNotifications();
+
                 await Until(() => AtTheCSMS("BootNotification") > 0,                                 "The station's BootNotification reaching the CSMS");
                 await Until(() => station.RegistrationJSON()["2.1"]?["state"]?.Value<String>() == "Accepted", "The station being accepted by the CSMS");
             }

@@ -395,6 +395,10 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             );
 
             await Until(() => StatusOf(localController, uplinkConnection!) == ConnectionStatus.Connected, $"'{lcLogin}' connecting over webSocketTLS", localController, csms);
+
+            // Sent by no node by itself: asked for, as after a reboot.
+            _ = localController.SendBootNotifications();
+
             await Until(() => RegistrationOf(localController)              == "Accepted",                 $"'{lcLogin}' being accepted by the CSMS",   localController, csms);
 
             #endregion
@@ -427,6 +431,10 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             await Until(() => StatusOf(chargingStation, connection!) == ConnectionStatus.Connected, $"'{login}' connecting over webSocketMTLS",                        chargingStation, localController, csms);
             await Until(() => IsConnectedAt(localController, login),                                $"'{login}' being let in by its certificate",                     chargingStation, localController, csms);
+
+            // Sent by no node by itself: asked for, as after a reboot.
+            _ = chargingStation.SendBootNotifications();
+
             await Until(() => RegistrationOf(chargingStation)        == "Accepted",                 $"'{login}' being accepted by the CSMS above the local controller", chargingStation, localController, csms);
 
             #endregion

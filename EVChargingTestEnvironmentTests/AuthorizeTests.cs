@@ -565,6 +565,10 @@ namespace cloud.charging.open.TestEnvironment.Tests
             station = await Started(station);
 
             await Until(() => StatusOf(station, connection!) == ConnectionStatus.Connected, $"'{Login}' connecting over {Transport}", station);
+
+            // Sent by no node by itself: asked for, as after a reboot.
+            _ = station.SendBootNotifications();
+
             await Until(() => RegistrationOf(station) == "Accepted",                       $"'{Login}' being accepted by the CSMS",  station);
 
             return station;
@@ -635,6 +639,9 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             await Until(() => controller.CSMSConnected, "The controller connecting to its CSMS");
 
+            // Sent by no node by itself: asked for, as after a reboot.
+            _ = controller.SendBootNotifications();
+
             #endregion
 
             #region The station, below the controller
@@ -658,6 +665,10 @@ namespace cloud.charging.open.TestEnvironment.Tests
             station = await Started(station);
 
             await Until(() => StatusOf(station, connection!) == ConnectionStatus.Connected, "The station connecting to the controller",          station);
+
+            // Sent by no node by itself: asked for, as after a reboot.
+            _ = station.SendBootNotifications();
+
             await Until(() => atTheCSMS.Contains("BootNotification"),                      "The station's BootNotification reaching the CSMS", station);
             await Until(() => RegistrationOf(station) == "Accepted",                       "The CSMS's answer reaching the station",           station);
 

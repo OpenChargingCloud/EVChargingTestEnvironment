@@ -201,6 +201,10 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             await Until(() => StatusOf(csms, connection!)         == ConnectionStatus.Connected,  $"'{login}' dialling over {Transport}",            csms, chargingStation);
             await Until(() => StatusOf(chargingStation, inbound!) == ConnectionStatus.Connected,  $"'{login}' being let in by the charging station", csms, chargingStation);
+
+            // Sent by no node by itself: asked for, as after a reboot.
+            _ = chargingStation.SendBootNotifications();
+
             await Until(() => RegistrationOf(chargingStation)     == "Accepted",                  $"'{node}' being accepted by the CSMS",            csms, chargingStation);
 
 

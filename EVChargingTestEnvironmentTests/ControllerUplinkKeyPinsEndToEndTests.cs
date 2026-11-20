@@ -293,6 +293,9 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
                          });
 
+            // Sent by no node by itself: asked for, as after a reboot.
+            _ = controller.SendBootNotifications();
+
         }
 
         private IPinnedTLSEndpoint? Uplink
