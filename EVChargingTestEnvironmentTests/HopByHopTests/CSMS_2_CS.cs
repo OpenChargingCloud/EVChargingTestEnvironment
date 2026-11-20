@@ -43,6 +43,7 @@ using WWCPNode    = cloud.charging.open.protocols.WWCP.Node.WWCPNode;
 //using Controller  = cloud.charging.open.LocalController.LocalController;
 //using Station     = cloud.charging.open.ChargingStation.ChargingStation;
 using org.GraphDefined.Vanaheimr.Illias;
+using org.GraphDefined.Vanaheimr.Hermod.HTTP;
 
 #endregion
 
@@ -55,9 +56,9 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
         #region Data
 
-        private DNSClient?                       dnsClient;
-        private CSMS.CSMS?                       csms;
-        private ChargingStation.ChargingStation? chargingStation;
+        private DNSClient?                        dnsClient;
+        private CSMS.CSMS?                        csms;
+        private ChargingStation.ChargingStation?  chargingStation;
 
 
         private const           String    KnownCard       = "04A2B3C4D5E6F7";
@@ -72,35 +73,35 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         public async Task Start()
         {
 
-            dnsClient        = new DNSClient(
-                                   SearchForIPv6DNSServers: false
-                               );
+            dnsClient          = new DNSClient(
+                                     SearchForIPv6DNSServers: false
+                                 );
 
             var csmsDirectory  = NewNodeDirectory("csms");
 
-            csms             = new CSMS.CSMS(
-                                   DNSClient:        dnsClient,
-                                   HTTPPort:         IPPort.Parse(TestPorts.Free()),
-                                   AccountsPath:     csmsDirectory.Accounts,
-                                   ConfigFile:       csmsDirectory.ConfigFile,
-                                   LogToConsole:     false,
-                                   BridgeDebugLog:   false
-                               );
+            csms               = new CSMS.CSMS(
+                                     DNSClient:        dnsClient,
+                                     HTTPPort:         IPPort.Parse(TestPorts.Free()),
+                                     AccountsPath:     csmsDirectory.Accounts,
+                                     ConfigFile:       csmsDirectory.ConfigFile,
+                                     LogToConsole:     false,
+                                     BridgeDebugLog:   false
+                                 );
 
             await csms.Start();
 
 
             var csDirectory    = NewServedNodeDirectory("cs");
 
-            chargingStation  = new ChargingStation.ChargingStation(
-                                   DNSClient:        dnsClient,
-                                   HTTPPort:         IPPort.Parse(TestPorts.Free()),
-                                   NoKiosk:          true,
-                                   AccountsPath:     csDirectory.Accounts,
-                                   ConfigFile:       csDirectory.ConfigFile,
-                                   LogToConsole:     false,
-                                   BridgeDebugLog:   false
-                               );
+            chargingStation    = new ChargingStation.ChargingStation(
+                                     DNSClient:        dnsClient,
+                                     HTTPPort:         IPPort.Parse(TestPorts.Free()),
+                                     NoKiosk:          true,
+                                     AccountsPath:     csDirectory.Accounts,
+                                     ConfigFile:       csDirectory.ConfigFile,
+                                     LogToConsole:     false,
+                                     BridgeDebugLog:   false
+                                 );
 
             await chargingStation.Start();
 
@@ -167,8 +168,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             // The charging station: the CSMS, written down as a connection it makes.
             Assert.That(
                 chargingStation.Connections.TryAddConnection(
-                     "The CSMS, dialling in",
-                     door,
+                     I18NString.Create("The CSMS, dialling in"),
+                     URL.Parse(door),
                      "CSMS",
                      true,
                      null,
@@ -181,12 +182,12 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             );
 
             // The CSMS: a login of the node it dials, and the connection to it.
-            Assert.That(csms.WebSocketLogins.TrySetPassword(node, RandomExtensions.RandomString(32), null, "tests", out error), Is.True, error);
+            Assert.That(csms.WebSocketLogins.TrySetPasswordAuthentication(node, RandomExtensions.RandomString(32), null, I18NString.Create("tests"), out error), Is.True, error);
 
             Assert.That(
                 csms.Connections.TryAddConnection(
-                     description,
-                     door,
+                     I18NString.Create(description),
+                     URL.Parse(door),
                      "ChargingStation",
                      true,
                      Credentials(csms, chargingStation, login, Authentication, description),
@@ -198,9 +199,9 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
                 Is.True, error
             );
 
-            await Until(() => StatusOf(csms, connection!) == ConnectionStatus.Connected,     $"'{login}' dialling over {Transport}",                csms, chargingStation);
-            await Until(() => StatusOf(chargingStation, inbound!) == ConnectionStatus.Connected, $"'{login}' being let in by the charging station", csms, chargingStation);
-            await Until(() => RegistrationOf(chargingStation) == "Accepted",                                $"'{node}' being accepted by the CSMS",              csms, chargingStation);
+            await Until(() => StatusOf(csms, connection!)         == ConnectionStatus.Connected,  $"'{login}' dialling over {Transport}",            csms, chargingStation);
+            await Until(() => StatusOf(chargingStation, inbound!) == ConnectionStatus.Connected,  $"'{login}' being let in by the charging station", csms, chargingStation);
+            await Until(() => RegistrationOf(chargingStation)     == "Accepted",                  $"'{node}' being accepted by the CSMS",            csms, chargingStation);
 
 
             //var station = await AStationAtTheCSMS(Transport, "cs001");

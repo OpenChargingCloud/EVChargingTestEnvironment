@@ -380,8 +380,8 @@ namespace cloud.charging.open.TestEnvironment.Tests
                     Assert.That(CSMS.TryAddStationSSHKey(StationLogin, SshPublicKey.FromHostKey(key).ToAuthorizedKeyLine(), "test", null, null, "tests", out _, out var error, out _),
                                 Is.True, error);
 
-                    Assert.That(first.Connections.TryAddConnection("The CSMS over SSH",
-                                                                   $"ssh://{StationLogin}@127.0.0.1:{CSMS.SSHPort!.Value.ToUInt16()}",
+                    Assert.That(first.Connections.TryAddConnection(I18NString.Create("The CSMS over SSH"),
+                                                                   URL.Parse($"ssh://{StationLogin}@127.0.0.1:{CSMS.SSHPort!.Value.ToUInt16()}"),
                                                                    "csms",
                                                                    true,
                                                                    null,
@@ -400,13 +400,13 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
                     const String password = "a-password-long-enough-for-ocpp";
 
-                    Assert.That(CSMS.WebSocketLogins.TrySetPassword(StationLogin, password, null, "tests", out var error), Is.True, error);
+                    Assert.That(CSMS.WebSocketLogins.TrySetPasswordAuthentication(StationLogin, password, null, I18NString.Create("tests"), out var error), Is.True, error);
 
-                    Assert.That(first.Connections.TryAddBasicAuthentication(StationLogin, password, "The CSMS", out var authentication, out error),
+                    Assert.That(first.Connections.TryAddPasswordAuthentication(StationLogin, password, I18NString.Create("The CSMS"), out var authentication, out error),
                                 Is.True, error);
 
-                    Assert.That(first.Connections.TryAddConnection("The CSMS over a WebSocket",
-                                                                   $"ws://127.0.0.1:{CSMS.OCPPServerSettings.TCPPort!.Value.ToUInt16()}",
+                    Assert.That(first.Connections.TryAddConnection(I18NString.Create("The CSMS over a WebSocket"),
+                                                                   URL.Parse($"ws://127.0.0.1:{CSMS.OCPPServerSettings.TCPPort!.Value.ToUInt16()}"),
                                                                    "csms",
                                                                    true,
                                                                    authentication,

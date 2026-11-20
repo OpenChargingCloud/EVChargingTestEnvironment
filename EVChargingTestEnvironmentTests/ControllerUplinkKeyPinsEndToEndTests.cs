@@ -24,6 +24,7 @@ using Newtonsoft.Json.Linq;
 
 using NUnit.Framework;
 
+using org.GraphDefined.Vanaheimr.Illias;
 using org.GraphDefined.Vanaheimr.Hermod;
 using org.GraphDefined.Vanaheimr.Hermod.DNS;
 
@@ -231,7 +232,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
                                             BridgeDebugLog:  false
                                         );
 
-                       Assert.That(management.WebSocketLogins.TrySetPassword       (ControllerId, UplinkPassword, null, "tests", out var error), Is.True, error);
+                       Assert.That(management.WebSocketLogins.TrySetPasswordAuthentication       (ControllerId, UplinkPassword, null, I18NString.Create("tests"), out var error), Is.True, error);
                        Assert.That(management.WebSocketLogins.TrySetLocalController(ControllerId, true, out var markError),                      Is.True, markError);
 
                        return management;

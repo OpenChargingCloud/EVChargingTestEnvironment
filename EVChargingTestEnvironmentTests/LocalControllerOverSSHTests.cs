@@ -25,6 +25,7 @@ using Newtonsoft.Json.Linq;
 
 using NUnit.Framework;
 
+using org.GraphDefined.Vanaheimr.Illias;
 using org.GraphDefined.Vanaheimr.Hermod;
 using org.GraphDefined.Vanaheimr.Hermod.SSH;
 
@@ -146,7 +147,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
         protected override void GiveThePassword(String Login, String Password)
         {
-            Assert.That(LC.WebSocketLogins.TrySetPassword(Login, Password, null, "tests", out var error), Is.True, error);
+            Assert.That(LC.WebSocketLogins.TrySetPasswordAuthentication(Login, Password, null, I18NString.Create("tests"), out var error), Is.True, error);
         }
 
         protected override Task<TriggerMessageResponse> AskForABootNotification(String Login)
@@ -325,7 +326,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
                                  BridgeDebugLog:  false
                              );
 
-            Assert.That(management.WebSocketLogins.TrySetPassword(ControllerId, UplinkPassword, null, "tests", out var error), Is.True, error);
+            Assert.That(management.WebSocketLogins.TrySetPasswordAuthentication(ControllerId, UplinkPassword, null, I18NString.Create("tests"), out var error), Is.True, error);
 
             // A local controller's login: in the overlay network, which the
             // controller dials by default, what it forwards in the name of

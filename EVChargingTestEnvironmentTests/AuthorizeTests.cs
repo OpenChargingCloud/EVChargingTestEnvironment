@@ -26,9 +26,11 @@ using Newtonsoft.Json.Linq;
 
 using NUnit.Framework;
 
+using org.GraphDefined.Vanaheimr.Illias;
 using org.GraphDefined.Vanaheimr.Hermod;
 using org.GraphDefined.Vanaheimr.Hermod.DNS;
 using org.GraphDefined.Vanaheimr.Hermod.SSH;
+using org.GraphDefined.Vanaheimr.Hermod.HTTP;
 
 using cloud.charging.open.protocols.WWCP.Node.Certificates;
 using cloud.charging.open.protocols.WWCP.Node.Configuration;
@@ -261,7 +263,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
                              );
 
             // The controller of the last test signs in here with a password.
-            Assert.That(management.WebSocketLogins.TrySetPassword(ControllerId, UplinkPassword, null, "tests", out var error), Is.True, error);
+            Assert.That(management.WebSocketLogins.TrySetPasswordAuthentication(ControllerId, UplinkPassword, null, I18NString.Create("tests"), out var error), Is.True, error);
 
             // A local controller's login: in the overlay network, which the
             // controller dials by default, what it forwards in the name of
@@ -504,14 +506,14 @@ namespace cloud.charging.open.TestEnvironment.Tests
             {
 
                 case "basic":
-                    Assert.That(CSMS.WebSocketLogins.TrySetPassword(Login, ThePassword, null, "tests", out error), Is.True, error);
-                    Assert.That(station.Connections.TryAddBasicAuthentication(Login, ThePassword, "The CSMS", out credentials, out error), Is.True, error);
+                    Assert.That(CSMS.WebSocketLogins.TrySetPasswordAuthentication(Login, ThePassword, null, I18NString.Create("tests"), out error), Is.True, error);
+                    Assert.That(station.Connections.TryAddPasswordAuthentication(Login, ThePassword, I18NString.Create("The CSMS"), out credentials, out error), Is.True, error);
                     url = $"ws://127.0.0.1:{webSocketPort}";
                     break;
 
                 case "totp":
-                    Assert.That(CSMS.WebSocketLogins.TrySetTOTP(Login, TheSecret, null, null, null, null, null, "tests", out _, out error), Is.True, error);
-                    Assert.That(station.Connections.TryAddTOTPAuthentication(Login, TheSecret, "The CSMS", out credentials, out error), Is.True, error);
+                    Assert.That(CSMS.WebSocketLogins.TrySetTOTPAuthentication(Login, TheSecret, null, null, null, null, null, I18NString.Create("tests"), out error), Is.True, error);
+                    Assert.That(station.Connections.TryAddTOTPAuthentication(Login, TheSecret, I18NString.Create("The CSMS"), out credentials, out error), Is.True, error);
                     url = $"ws://127.0.0.1:{webSocketPort}";
                     break;
 
@@ -549,8 +551,8 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             }
 
-            Assert.That(station.Connections.TryAddConnection($"The CSMS over {Transport}",
-                                                             url,
+            Assert.That(station.Connections.TryAddConnection(I18NString.Create($"The CSMS over {Transport}"),
+                                                             URL.Parse(url),
                                                              "csms",
                                                              true,
                                                              credentials,
@@ -637,14 +639,14 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             #region The station, below the controller
 
-            Assert.That(controller.WebSocketLogins.TrySetPassword("cs001", ThePassword, null, "tests", out var error), Is.True, error);
+            Assert.That(controller.WebSocketLogins.TrySetPasswordAuthentication("cs001", ThePassword, null, I18NString.Create("tests"), out var error), Is.True, error);
 
             var station = NewStation();
 
-            Assert.That(station.Connections.TryAddBasicAuthentication("cs001", ThePassword, "The controller", out var credentials, out error), Is.True, error);
+            Assert.That(station.Connections.TryAddPasswordAuthentication("cs001", ThePassword, I18NString.Create("The controller"), out var credentials, out error), Is.True, error);
 
-            Assert.That(station.Connections.TryAddConnection("The controller",
-                                                             $"ws://127.0.0.1:{controller.OCPPServerSettings.TCPPort!.Value.ToUInt16()}",
+            Assert.That(station.Connections.TryAddConnection(I18NString.Create("The controller"),
+                                                             URL.Parse($"ws://127.0.0.1:{controller.OCPPServerSettings.TCPPort!.Value.ToUInt16()}"),
                                                              "localcontroller",
                                                              true,
                                                              credentials,

@@ -43,6 +43,7 @@ using WWCPNode    = cloud.charging.open.protocols.WWCP.Node.WWCPNode;
 //using Controller  = cloud.charging.open.LocalController.LocalController;
 //using Station     = cloud.charging.open.ChargingStation.ChargingStation;
 using org.GraphDefined.Vanaheimr.Illias;
+using org.GraphDefined.Vanaheimr.Hermod.HTTP;
 
 #endregion
 
@@ -126,11 +127,11 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         #endregion
 
 
-        #region GW_to_CSMS_viaWS(Transport, Authentication)
+        #region WebSocket(Transport, Authentication)
 
-        [TestCase("ws", "basic")]
-        public async Task GW_to_CSMS_viaWS(String  Transport,
-                                           String  Authentication)
+        [TestCase("ws", authPassword)]
+        public async Task WebSocket(String  Transport,
+                                    String  Authentication)
         {
 
             if (gateway is null)
@@ -155,8 +156,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             Assert.That(
                 gateway.Connections.TryAddConnection(
-                     description,
-                     $"{Transport}://{login}@127.0.0.1:{csms.OCPPServerSettings.TCPPort}",
+                     I18NString.Create(description),
+                     URL.Parse($"{Transport}://{login}@127.0.0.1:{csms.OCPPServerSettings.TCPPort}"),
                      "CSMS",
                      true,
                      credentials,

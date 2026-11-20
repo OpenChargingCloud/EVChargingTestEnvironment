@@ -27,11 +27,13 @@ using Newtonsoft.Json.Linq;
 
 using NUnit.Framework;
 
+using org.GraphDefined.Vanaheimr.Illias;
 using org.GraphDefined.Vanaheimr.Hermod;
 using org.GraphDefined.Vanaheimr.Hermod.DNS;
 using org.GraphDefined.Vanaheimr.Hermod.SSH;
 using org.GraphDefined.Vanaheimr.Hermod.SSH.Client;
 using org.GraphDefined.Vanaheimr.Hermod.Messaging;
+using org.GraphDefined.Vanaheimr.Hermod.HTTP;
 
 using cloud.charging.open.protocols.WWCP;
 using cloud.charging.open.protocols.WWCP.NetworkingNode;
@@ -336,8 +338,8 @@ namespace cloud.charging.open.TestEnvironment.Tests
             if (KeyIsKnown)
                 GiveTheKey(Login, key, Group);
 
-            Assert.That(station.Connections.TryAddConnection($"OCPP over SSH to {TheServer}",
-                                                             $"ssh://{Login}@127.0.0.1:{SSHPort}{Path}",
+            Assert.That(station.Connections.TryAddConnection(I18NString.Create($"OCPP over SSH to {TheServer}"),
+                                                             URL.Parse($"ssh://{Login}@127.0.0.1:{SSHPort}{Path}"),
                                                              ConnectionType,
                                                              true,
                                                              null,
@@ -377,8 +379,8 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             var (station, connection) = await AStationDialling(Login, Group: Group);
 
-            await Until(() => StatusOf(station, connection) == ConnectionStatus.Connected, $"'{Login}' connecting over SSH",        station);
-            await Until(() => IsConnectedOverSSH(Login),                                  $"'{Login}' being registered by {TheServer}", station);
+            await Until(() => StatusOf(station, connection) == ConnectionStatus.Connected, $"'{Login}' connecting over SSH",             station);
+            await Until(() => IsConnectedOverSSH(Login),                                   $"'{Login}' being registered by {TheServer}", station);
             await Until(() => RegistrationOf(station) == "Accepted",                       $"'{Login}' being accepted by {TheServer}",   station);
 
             return (station, connection);
@@ -398,11 +400,11 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             var station = NewStation();
 
-            Assert.That(station.Connections.TryAddBasicAuthentication(Login, password, TheServer, out var authentication, out var error),
+            Assert.That(station.Connections.TryAddPasswordAuthentication(Login, password, I18NString.Create(TheServer), out var authentication, out var error),
                         Is.True, error);
 
-            Assert.That(station.Connections.TryAddConnection(TheServer,
-                                                             $"ws://127.0.0.1:{WebSocketPort}",
+            Assert.That(station.Connections.TryAddConnection(I18NString.Create(TheServer),
+                                                             URL.Parse($"ws://127.0.0.1:{WebSocketPort}"),
                                                              ConnectionType,
                                                              true,
                                                              authentication,

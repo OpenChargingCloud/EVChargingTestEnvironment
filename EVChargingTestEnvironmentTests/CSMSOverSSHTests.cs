@@ -22,6 +22,7 @@ using Newtonsoft.Json.Linq;
 
 using NUnit.Framework;
 
+using org.GraphDefined.Vanaheimr.Illias;
 using org.GraphDefined.Vanaheimr.Hermod;
 using org.GraphDefined.Vanaheimr.Hermod.SSH;
 
@@ -128,7 +129,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
         protected override void GiveThePassword(String Login, String Password)
         {
-            Assert.That(CSMS.WebSocketLogins.TrySetPassword(Login, Password, null, "tests", out var error), Is.True, error);
+            Assert.That(CSMS.WebSocketLogins.TrySetPasswordAuthentication(Login, Password, null, I18NString.Create("tests"), out var error), Is.True, error);
         }
 
         protected override Task<TriggerMessageResponse> AskForABootNotification(String Login)

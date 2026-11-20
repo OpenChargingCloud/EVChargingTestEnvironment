@@ -18,6 +18,8 @@
 #region Usings
 
 using Newtonsoft.Json.Linq;
+using org.GraphDefined.Vanaheimr.Illias;
+using org.GraphDefined.Vanaheimr.Hermod.HTTP;
 
 using cloud.charging.open.protocols.WWCP.Node.Connections;
 using cloud.charging.open.protocols.WWCP.Node.KeyPins;
@@ -60,7 +62,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
                                                    out String?      Error)
         {
 
-            if (!Controller.Connections.TryAddBasicAuthentication(Login, Password, "The password of the line up", out var id, out Error))
+            if (!Controller.Connections.TryAddPasswordAuthentication(Login, Password, I18NString.Create("The password of the line up"), out var id, out Error))
                 return false;
 
             if (Controller.Uplink() is not ConnectionEntry line)
@@ -73,12 +75,12 @@ namespace cloud.charging.open.TestEnvironment.Tests
                 if (url is null)
                     return true;
 
-                return Controller.Connections.TryAddConnection("CSMS", url, "CSMS", true, id, null, out _, out Error);
+                return Controller.Connections.TryAddConnection(I18NString.Create("CSMS"), URL.Parse(url), "CSMS", true, id, null, out _, out Error);
 
             }
 
             return Controller.Connections.TryUpdateConnection(
-                       line.Id, line.Description, line.URL.ToString(), line.ConnectionType.ToString(), line.AutoConnect,
+                       line.Id, line.Description, line.URL, line.ConnectionType.ToString(), line.AutoConnect,
                        id,
                        line.CertificateId,
                        out Error

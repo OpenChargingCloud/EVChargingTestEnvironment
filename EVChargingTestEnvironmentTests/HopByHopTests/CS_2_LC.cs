@@ -43,6 +43,7 @@ using WWCPNode    = cloud.charging.open.protocols.WWCP.Node.WWCPNode;
 //using Controller  = cloud.charging.open.LocalController.LocalController;
 //using Station     = cloud.charging.open.ChargingStation.ChargingStation;
 using org.GraphDefined.Vanaheimr.Illias;
+using org.GraphDefined.Vanaheimr.Hermod.HTTP;
 
 #endregion
 
@@ -165,8 +166,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             Assert.That(
                 chargingStation.Connections.TryAddConnection(
-                     description,
-                     $"{Transport}://{login}@127.0.0.1:{localController.OCPPServerSettings.TCPPort}",
+                     I18NString.Create(description),
+                     URL.Parse($"{Transport}://{login}@127.0.0.1:{localController.OCPPServerSettings.TCPPort}"),
                      "LocalController",
                      true,
                      credentials,
@@ -177,8 +178,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
                 Is.True, error
             );
 
-            await Until(() => StatusOf(chargingStation, connection!) == ConnectionStatus.Connected, $"'{login}' connecting over {Transport}", chargingStation, localController);
-            await Until(() => IsConnectedAt(localController, login),                              $"'{login}' being let in by the local controller", chargingStation, localController);
+            await Until(() => StatusOf(chargingStation, connection!) == ConnectionStatus.Connected, $"'{login}' connecting over {Transport}",          chargingStation, localController);
+            await Until(() => IsConnectedAt(localController, login),                                $"'{login}' being let in by the local controller", chargingStation, localController);
 
 
             //var station = await AStationAtTheCSMS(Transport, "cs001");
@@ -266,8 +267,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             Assert.That(
                 chargingStation.Connections.TryAddConnection(
-                     description,
-                     $"ssh://{login}@127.0.0.1:{localController.SSHPort!.Value.ToUInt16()}",
+                     I18NString.Create(description),
+                     URL.Parse($"ssh://{login}@127.0.0.1:{localController.SSHPort!.Value.ToUInt16()}"),
                      "LocalController",
                      true,
                      credentials,

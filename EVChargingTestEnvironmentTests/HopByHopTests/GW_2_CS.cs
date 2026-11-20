@@ -43,6 +43,7 @@ using WWCPNode    = cloud.charging.open.protocols.WWCP.Node.WWCPNode;
 //using Controller  = cloud.charging.open.LocalController.LocalController;
 //using Station     = cloud.charging.open.ChargingStation.ChargingStation;
 using org.GraphDefined.Vanaheimr.Illias;
+using org.GraphDefined.Vanaheimr.Hermod.HTTP;
 
 #endregion
 
@@ -127,7 +128,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         #endregion
 
 
-        #region GW_to_CS_viaWS(Transport, Authentication)
+        #region WebSocket(Transport, Authentication)
 
         /// <summary>
         /// A gateway dials only upwards - its CSMS, a local controller
@@ -137,10 +138,10 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         /// there is nothing here to test until a gateway can dial
         /// downwards, see CSMS_2_CS.
         /// </summary>
-        [TestCase("ws", "basic")]
+        [TestCase("ws", authPassword)]
         [Ignore("A gateway dials no charging station: only the CSMS dials downwards (ConnectionRules.NodesBelow).")]
-        public async Task GW_to_CS_viaWS(String  Transport,
-                                         String  Authentication)
+        public async Task WebSocket(String  Transport,
+                                    String  Authentication)
         {
 
             if (gateway is null)
@@ -161,8 +162,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             Assert.That(
                 gateway.Connections.TryAddConnection(
-                     description,
-                     $"{Transport}://{login}@127.0.0.1:{chargingStation.OCPPServerSettings.TCPPort}",
+                     I18NString.Create(description),
+                     URL.Parse($"{Transport}://{login}@127.0.0.1:{chargingStation.OCPPServerSettings.TCPPort}"),
                      "ChargingStation",
                      true,
                      Credentials(gateway, chargingStation, login, Authentication, description),

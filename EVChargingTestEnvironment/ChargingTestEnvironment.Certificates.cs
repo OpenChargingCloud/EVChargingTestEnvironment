@@ -22,6 +22,9 @@ using System.Security.Cryptography;
 
 using Newtonsoft.Json.Linq;
 
+using org.GraphDefined.Vanaheimr.Illias;
+using org.GraphDefined.Vanaheimr.Hermod.HTTP;
+
 using cloud.charging.open.protocols.WWCP.Node.Certificates;
 using cloud.charging.open.protocols.WWCP.Node.Logins;
 
@@ -533,13 +536,13 @@ namespace cloud.charging.open.TestEnvironment
                      Enabled:           true,
                      AuthMethods:       [ LoginsStore.AuthMethod.Basic, LoginsStore.AuthMethod.TOTP, LoginsStore.AuthMethod.Certificate ],
                      ClientAuthentication:  [ WebSocketClientAuthentication.HTTPAuthWithoutTLS, WebSocketClientAuthentication.HTTPAuthOverTLS, WebSocketClientAuthentication.TLSClientCertificate ],
-                     Note:              "Made by the test environment",
+                     Description:       I18NString.Create("Made by the test environment"),
                      out var groupError))
             {
                 throw new InvalidOperationException($"{Whose}: the login group could not be made: {groupError}");
             }
 
-            if (!Logins.TrySetPassword(Id, Secret, WebSocketLoginGroup, "Set up by the test environment", out var error))
+            if (!Logins.TrySetPasswordAuthentication(Id, Secret, WebSocketLoginGroup, I18NString.Create("Set up by the test environment"), out var error))
                 throw new InvalidOperationException($"{Whose}: '{Id}' could not be allowed in: {error}");
 
         }
@@ -566,28 +569,30 @@ namespace cloud.charging.open.TestEnvironment
                                   ? "The local controller of this test environment"
                                   : "The CSMS of this test environment";
 
-            var url         = Controller is not null
-                                  ? $"{options.OCPPScheme}://{options.Host}:{options.ControllerOCPPPort}"
-                                  : $"{options.OCPPScheme}://{options.Host}:{options.CSMSOCPPPort}";
+            var url         = URL.Parse(
+                                  Controller is not null
+                                      ? $"{options.OCPPScheme}://{options.Host}:{options.ControllerOCPPPort}"
+                                      : $"{options.OCPPScheme}://{options.Host}:{options.CSMSOCPPPort}"
+                              );
 
             foreach (var existing in Station.Connections.Connections.
-                                             Where(one => one.Description == description).
+                                             Where(one => one.Description.FirstText() == description).
                                              ToArray())
             {
                 Station.Connections.TryRemoveConnection(existing.Id, out _);
             }
 
             foreach (var existing in Station.Connections.Authentications.
-                                             Where(one => one.Description == description).
+                                             Where(one => one.Description.FirstText() == description).
                                              ToArray())
             {
                 Station.Connections.TryRemoveAuthentication(existing.Id, out _);
             }
 
-            if (!Station.Connections.TryAddBasicAuthentication(
+            if (!Station.Connections.TryAddPasswordAuthentication(
                      StationNodeId,
                      Secret,
-                     description,
+                     I18NString.Create(description),
                      out var authenticationId,
                      out var authenticationError))
             {
@@ -595,7 +600,7 @@ namespace cloud.charging.open.TestEnvironment
             }
 
             if (!Station.Connections.TryAddConnection(
-                     description,
+                     I18NString.Create(description),
                      url,
                      Controller is not null ? "localcontroller" : "csms",
                      AutoConnect:       true,
@@ -633,24 +638,24 @@ namespace cloud.charging.open.TestEnvironment
             const String description = "The CSMS of this test environment";
 
             foreach (var existing in Controller.Connections.Connections.
-                                                Where(one => one.Description == description ||
-                                                             one.Description == "CSMS").
+                                                Where(one => one.Description.FirstText() == description ||
+                                                             one.Description.FirstText() == "CSMS").
                                                 ToArray())
             {
                 Controller.Connections.TryRemoveConnection(existing.Id, out _);
             }
 
             foreach (var existing in Controller.Connections.Authentications.
-                                                Where(one => one.Description == description).
+                                                Where(one => one.Description.FirstText() == description).
                                                 ToArray())
             {
                 Controller.Connections.TryRemoveAuthentication(existing.Id, out _);
             }
 
-            if (!Controller.Connections.TryAddBasicAuthentication(
+            if (!Controller.Connections.TryAddPasswordAuthentication(
                      ControllerNodeId,
                      Secret,
-                     description,
+                     I18NString.Create(description),
                      out var authenticationId,
                      out var authenticationError))
             {
@@ -658,8 +663,8 @@ namespace cloud.charging.open.TestEnvironment
             }
 
             if (!Controller.Connections.TryAddConnection(
-                     description,
-                     $"{options.OCPPScheme}://{options.Host}:{options.CSMSOCPPPort}",
+                     I18NString.Create(description),
+                     URL.Parse($"{options.OCPPScheme}://{options.Host}:{options.CSMSOCPPPort}"),
                      "csms",
                      AutoConnect:       true,
                      AuthenticationId:  authenticationId,

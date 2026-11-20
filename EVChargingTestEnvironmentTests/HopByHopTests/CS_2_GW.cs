@@ -43,6 +43,7 @@ using WWCPNode    = cloud.charging.open.protocols.WWCP.Node.WWCPNode;
 //using Controller  = cloud.charging.open.Gateway.Gateway;
 //using Station     = cloud.charging.open.ChargingStation.ChargingStation;
 using org.GraphDefined.Vanaheimr.Illias;
+using org.GraphDefined.Vanaheimr.Hermod.HTTP;
 
 #endregion
 
@@ -128,7 +129,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         #endregion
 
 
-        #region CS_to_GW_viaWS(Transport, Authentication)
+        #region WebSocket(Transport, Authentication)
 
         /// <summary>
         /// The station dials the gateway and is let in. Whether it is accepted is
@@ -139,8 +140,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         [TestCase("wss", authPassword)]
         [TestCase("ws",  authTOTP)]
         [TestCase("wss", authTOTP)]
-        public async Task CS_to_GW_viaWS(String  Transport,
-                                         String  Authentication)
+        public async Task WebSocket(String  Transport,
+                                    String  Authentication)
         {
 
             if (chargingStation is null)
@@ -165,8 +166,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             Assert.That(
                 chargingStation.Connections.TryAddConnection(
-                     description,
-                     $"{Transport}://{login}@127.0.0.1:{gateway.OCPPServerSettings.TCPPort}",
+                     I18NString.Create(description),
+                     URL.Parse($"{Transport}://{login}@127.0.0.1:{gateway.OCPPServerSettings.TCPPort}"),
                      "Gateway",
                      true,
                      credentials,

@@ -51,40 +51,30 @@ using org.GraphDefined.Vanaheimr.Illias;
 namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 {
 
-    public abstract class AHopByHopTest
+    public abstract class AHopByHopTest : ATest
     {
-
-        #region Data
-
-        public const String  authPassword             = "password";
-        public const String  authTOTP                 = "totp";
-        public const String  authTOTPChannelBinding   = "totpChannelBinding";
-        public const String  authPublicKey            = "publicKey";
-        public const String  authMTLS                 = "mTLS";
-
-        /// <summary>
-        /// How long a test waits for what is to happen on the network.
-        /// </summary>
-        protected static readonly TimeSpan  Waiting  = TimeSpan.FromSeconds(30);
-
-        private readonly ConcurrentQueue<String> nodeDirectories = new();
-
-        private X509Certificate2?  testCA;
-        private ECDsa?             testCAKey;
-
-        #endregion
-
 
         #region OverTLS / OverSSH
 
         /// <summary>
-        /// Whether the running test dials over wss://: one of its arguments
-        /// says so. Known in [SetUp] already, so the node that is dialled
-        /// gets a certificate before it starts.
+        /// Whether the running test dials over wss://: it is one named
+        /// "WebSocketTLS" or "WebSocketMTLS", or one of its arguments says
+        /// "wss". Known in [SetUp] already, so the node that is dialled gets
+        /// a certificate before it starts.
         /// </summary>
         protected static Boolean OverTLS
 
-            => TestContext.CurrentContext.Test.Arguments.Any(argument => argument as String == "wss");
+            => TestContext.CurrentContext.Test.MethodName is "WebSocketTLS" or "WebSocketMTLS" ||
+               TestContext.CurrentContext.Test.Arguments.Any(argument => argument as String == "wss");
+
+        /// <summary>
+        /// Whether the running test dials over wss:// and signs in with a
+        /// client certificate: it is one named "WebSocketMTLS". The node that
+        /// is dialled then lets in nothing else.
+        /// </summary>
+        protected static Boolean OverMTLS
+
+            => TestContext.CurrentContext.Test.MethodName == "WebSocketMTLS";
 
         /// <summary>
         /// Whether the running test dials over ssh://: it is one named "SSH".
@@ -115,7 +105,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         /// The "webSocketServer" section of a node that other nodes dial: its
         /// station server switched on, on 127.0.0.1 and a port of its own,
         /// letting in what signs in in the given ways - HTTP authentication
-        /// without TLS where none are given.
+        /// without TLS where none are given - and speaking OCPP 2.1 as JSON
+        /// and as CBOR.
         /// </summary>
         /// <remarks>
         /// Off where the file says nothing, so a node that is to be dialled
@@ -129,7 +120,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
                    new JProperty("address",               "127.0.0.1"),
                    new JProperty("port",                  TestPorts.Free()),
                    new JProperty("clientAuthentication",  new JArray(ClientAuthentication.Length > 0 ? ClientAuthentication : [ "httpAuthWithoutTLS" ])),
-                   new JProperty("subprotocols",          new JArray("ocpp2.1", "ocpp2.0.1")),
+                   new JProperty("subprotocols",          new JArray("ocpp2.1", "ocpp2.0.1", "ocpp2.1cbor")),
                    new JProperty("ssh",                   new JObject(
                        new JProperty("enabled",           OverSSH)
                    ))
@@ -168,7 +159,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
         #endregion
 
-        #region NewServedNodeDirectory(Purpose, params Sections)
+        #region NewServedNodeDirectory(Purpose, [ClientAuthentication,] params Sections)
 
         /// <summary>
         /// The directory of the node that is dialled: its station server
@@ -180,12 +171,34 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         /// <param name="Sections">What else the file says, e.g. <see cref="ReportsUpwards"/>.</param>
         protected NodeDirectory NewServedNodeDirectory(String              Purpose,
                                                        params JProperty[]  Sections)
+
+            => NewServedNodeDirectory(
+                   Purpose,
+                   OverMTLS
+                       ? "tlsClientCertificate"
+                       : OverTLS
+                             ? "httpAuthOverTLS"
+                             : "httpAuthWithoutTLS",
+                   Sections
+               );
+
+        /// <summary>
+        /// The directory of a node that is dialled, letting in what signs in in
+        /// the given way: a node further up a chain, say, that is dialled with
+        /// a password while the node below it lets in client certificates.
+        /// </summary>
+        /// <param name="Purpose">What the directory is for, "cs" or "csms", part of its name.</param>
+        /// <param name="ClientAuthentication">How a client may sign in: "httpAuthWithoutTLS", "httpAuthOverTLS", "tlsClientCertificate".</param>
+        /// <param name="Sections">What else the file says, e.g. <see cref="ReportsUpwards"/>.</param>
+        protected NodeDirectory NewServedNodeDirectory(String              Purpose,
+                                                       String              ClientAuthentication,
+                                                       params JProperty[]  Sections)
         {
 
             var nodeDirectory = NewNodeDirectory(
                                     Purpose,
                                     [
-                                        StationServer(OverTLS ? "httpAuthOverTLS" : "httpAuthWithoutTLS"),
+                                        StationServer(ClientAuthentication),
                                         .. (OverSSH ? new[] { SSHServer() } : Array.Empty<JProperty>()),
                                         .. Sections
                                     ]
@@ -305,6 +318,46 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
         #endregion
 
+        #region ClientCertificate(Dialler, Served, Login)
+
+        /// <summary>
+        /// What the node that dials signs in with over mutual TLS: a key of
+        /// its own, and for it a certificate of the test's CA that names the
+        /// login - that name is who the node it dials takes it for. The node
+        /// it dials believes what the test's CA vouches for.
+        /// </summary>
+        /// <returns>The certificate of the dialling node's store, to name as the connection's.</returns>
+        protected String ClientCertificate(WWCPNode         Dialler,
+                                           OCPPServingNode  Served,
+                                           String           Login)
+        {
+
+            Assert.That(Dialler.Certificates.TryCreateRequest(CertificateKind.TLSIdentity, Login, null, null, null, null,
+                                                              out var request, out var error, out _),
+                        Is.True, error);
+
+            using var certificate = CertificateRequest.LoadSigningRequestPem(request!.CSR, HashAlgorithmName.SHA256, CertificateRequestLoadOptions.UnsafeLoadCertificateExtensions).
+                                        Create(TestCA.SubjectName,
+                                               X509SignatureGenerator.CreateForECDsa(testCAKey!),
+                                               DateTimeOffset.UtcNow.AddDays(-1),
+                                               DateTimeOffset.UtcNow.AddDays(30),
+                                               Guid.NewGuid().ToByteArray());
+
+            Assert.That(Dialler.Certificates.TryAnswerRequest(certificate.ExportCertificatePem() + Environment.NewLine + TestCA.ExportCertificatePem(),
+                                                              out var identity, out _, out _, out error, out _),
+                        Is.True, error);
+
+            Assert.That(identity, Is.Not.Null, "The signed certificate could not be put together with its key.");
+
+            Assert.That(Served.ClientTrust.TryAdd(TestCA.ExportCertificatePem(), "The CA of the test", out _, out _, out error),
+                        Is.True, error);
+
+            return identity!.Id;
+
+        }
+
+        #endregion
+
         #region Credentials(Dialler, Served, Login, Authentication, Description)
 
         /// <summary>
@@ -327,12 +380,11 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             {
 
                 case authPassword:
-                case "basic":
 
                     var password = RandomExtensions.RandomString(32);
 
-                    Assert.That(Served. WebSocketLogins.TrySetPassword(Login, password, null, "tests", out error),                             Is.True, error);
-                    Assert.That(Dialler.Connections.TryAddBasicAuthentication(Login, password, Description, out credentials, out error),       Is.True, error);
+                    Assert.That(Served. WebSocketLogins.TrySetPasswordAuthentication(Login, password, null, I18NString.Create("tests"), out error),                             Is.True, error);
+                    Assert.That(Dialler.Connections.TryAddPasswordAuthentication(Login, password, I18NString.Create(Description), out credentials, out error),       Is.True, error);
 
                     break;
 
@@ -340,8 +392,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
                     var sharedSecret = RandomExtensions.RandomString(16);
 
-                    Assert.That(Served. WebSocketLogins.TrySetTOTP(Login, sharedSecret, null, null, null, null, null, "tests", out _, out error), Is.True, error);
-                    Assert.That(Dialler.Connections.TryAddTOTPAuthentication(Login, sharedSecret, Description, out credentials, out error),        Is.True, error);
+                    Assert.That(Served. WebSocketLogins.TrySetTOTPAuthentication(Login, sharedSecret, null, null, null, null, null, I18NString.Create("tests"), out error), Is.True, error);
+                    Assert.That(Dialler.Connections.TryAddTOTPAuthentication(Login, sharedSecret, I18NString.Create(Description), out credentials, out error),        Is.True, error);
 
                     break;
 

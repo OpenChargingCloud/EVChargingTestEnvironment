@@ -39,10 +39,9 @@ using cloud.charging.open.protocols.WWCP.Node.Connections;
 using cloud.charging.open.protocols.WWCP.Node.Logins;
 
 using WWCPNode    = cloud.charging.open.protocols.WWCP.Node.WWCPNode;
-//using Management  = cloud.charging.open.CSMS.CSMS;
-//using Controller  = cloud.charging.open.LocalController.LocalController;
-//using Station     = cloud.charging.open.ChargingStation.ChargingStation;
+
 using org.GraphDefined.Vanaheimr.Illias;
+using org.GraphDefined.Vanaheimr.Hermod.HTTP;
 
 #endregion
 
@@ -128,14 +127,14 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         #endregion
 
 
-        #region WebSocket(Transport, Authentication)
+        #region WebSocket     (Authentication, DataFormat)
 
-        [TestCase("ws",  authPassword)]
-        [TestCase("wss", authPassword)]
-        [TestCase("ws",  authTOTP)]
-        [TestCase("wss", authTOTP)]
-        public async Task WebSocket(String  Transport,
-                                    String  Authentication)
+        [TestCase(authPassword, formatJSON)]
+        [TestCase(authPassword, formatCBOR)]
+        [TestCase(authTOTP,     formatJSON)]
+        [TestCase(authTOTP,     formatCBOR)]
+        public async Task WebSocket(String  Authentication,
+                                    String  DataFormat)
         {
 
             if (chargingStation is null)
@@ -152,28 +151,158 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
 
             var login        = "cs-" + RandomExtensions.RandomString(8);
-            var description  = $"{chargingStation.Id} --({Transport}/{Authentication})--> {csms.OCPP.NodeId}";
+            var description  = I18NString.Create($"{chargingStation.Id} --(webSocket/{Authentication}/{DataFormat})--> {csms.OCPP.NodeId}");
 
+            String? credentials;
+            String? error;
+
+            switch (Authentication)
+            {
+
+                case authPassword:
+
+                    var password = RandomExtensions.RandomString(32);
+
+                    Assert.That(
+                        csms.WebSocketLogins.TrySetPasswordAuthentication(
+                            Login:         login,
+                            Password:      password,
+                            GroupId:       null,
+                            Description:   description,
+                            Error:         out error
+                        ),
+                        Is.True,
+                        error
+                    );
+
+                    Assert.That(
+                        chargingStation.Connections.TryAddPasswordAuthentication(
+                            Login:         login,
+                            Password:      password,
+                            Description:   description,
+                            Id:            out credentials,
+                            Error:         out error
+                        ),
+                        Is.True,
+                        error
+                    );
+
+                    break;
+
+
+                case authTOTP:
+
+                    var sharedSecret = RandomExtensions.RandomString(16);
+
+                    Assert.That(
+                        csms.WebSocketLogins.TrySetTOTPAuthentication(
+                            Login:               login,
+                            SharedSecret:        sharedSecret,
+                            ValidityTime:        null,
+                            Length:              null,
+                            Alphabet:            null,
+                            HashAlgorithm:       null,
+                            GroupId:             null,
+                            Description:         description,
+                            Error:               out error
+                        ),
+                        Is.True,
+                        error
+                    );
+
+                    Assert.That(
+                        chargingStation.Connections.TryAddTOTPAuthentication(
+                            Login:               login,
+                            SharedSecret:        sharedSecret,
+                            Description:         description,
+                            Id:                  out credentials,
+                            Error:               out error,
+                            ValiditySeconds:     null,
+                            Length:              null,
+                            Alphabet:            null,
+                            HashAlgorithm:       null,
+                            TLSChannelBinding:   null
+                        ),
+                        Is.True,
+                        error
+                    );
+
+                    break;
+
+
+                default:
+                    throw new ArgumentException($"'{Authentication}' is no way of signing in these tests know.", nameof(Authentication));
+
+            }
+
+            Assert.That(
+                chargingStation.Connections.TryAddConnection(
+                     description,
+                     URL.Parse($"ws://{login}@127.0.0.1:{csms.OCPPServerSettings.TCPPort}"),
+                     "CSMS",
+                     true,
+                     credentials,
+                     null,
+                     out var connection,
+                     out     error,
+                     Encoding: DataFormat
+                ),
+                Is.True, error
+            );
+
+            await Until(() => StatusOf(chargingStation, connection!) == ConnectionStatus.Connected,  $"'{login}' connecting over webSocket",   chargingStation, csms);
+            await Until(() => RegistrationOf(chargingStation)        == "Accepted",                  $"'{login}' being accepted by the CSMS",  chargingStation, csms);
+
+        }
+
+        #endregion
+
+        #region WebSocketTLS  (Authentication, DataFormat)
+
+        [TestCase(authPassword, formatJSON)]
+        [TestCase(authPassword, formatCBOR)]
+        [TestCase(authTOTP,     formatJSON)]
+        [TestCase(authTOTP,     formatCBOR)]
+        public async Task WebSocketTLS(String  Authentication,
+                                       String  DataFormat)
+        {
+
+            if (chargingStation is null)
+            {
+                Assert.Fail("The charging station is not running!");
+                return;
+            }
+
+            if (csms is null)
+            {
+                Assert.Fail("The CSMS is not running!");
+                return;
+            }
+
+
+            var login        = "cs-" + RandomExtensions.RandomString(8);
+            var description  = $"{chargingStation.Id} --(webSocket TLS/{Authentication}/{DataFormat})--> {csms.OCPP.NodeId}";
             var credentials  = Credentials(chargingStation, csms, login, Authentication, description);
 
             BelievesTheTestCA(chargingStation);
 
             Assert.That(
                 chargingStation.Connections.TryAddConnection(
-                     description,
-                     $"{Transport}://{login}@127.0.0.1:{csms.OCPPServerSettings.TCPPort}",
+                     I18NString.Create(description),
+                     URL.Parse($"wss://{login}@127.0.0.1:{csms.OCPPServerSettings.TCPPort}"),
                      "CSMS",
                      true,
                      credentials,
                      null,
                      out var connection,
-                     out var error
+                     out var error,
+                     Encoding: DataFormat
                 ),
                 Is.True, error
             );
 
-            await Until(() => StatusOf(chargingStation, connection!) == ConnectionStatus.Connected, $"'{login}' connecting over {Transport}", chargingStation, csms);
-            await Until(() => RegistrationOf(chargingStation) == "Accepted",                       $"'{login}' being accepted by the CSMS", chargingStation, csms);
+            await Until(() => StatusOf(chargingStation, connection!) == ConnectionStatus.Connected,  $"'{login}' connecting over webSocket TLS", chargingStation, csms);
+            await Until(() => RegistrationOf(chargingStation)        == "Accepted",                  $"'{login}' being accepted by the CSMS",    chargingStation, csms);
 
 
             //var station = await AStationAtTheCSMS(Transport, "cs001");
@@ -203,6 +332,84 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         }
 
         #endregion
+
+        #region WebSocketMTLS (DataFormat)
+
+        [TestCase("json")]
+        [TestCase("cbor")]
+        public async Task WebSocketMTLS(String DataFormat)
+        {
+
+            if (chargingStation is null)
+            {
+                Assert.Fail("The charging station is not running!");
+                return;
+            }
+
+            if (csms is null)
+            {
+                Assert.Fail("The CSMS is not running!");
+                return;
+            }
+
+
+            var login        = "cs-" + RandomExtensions.RandomString(8);
+            var description  = $"{chargingStation.Id} --(webSocket mTLS/{DataFormat})--> {csms.OCPP.NodeId}";
+
+            // A certificate of the test's CA that names the login: the CSMS
+            // knows the station by nothing else, so the URL names nobody.
+            var certificate  = ClientCertificate(chargingStation, csms, login);
+
+            BelievesTheTestCA(chargingStation);
+
+            Assert.That(
+                chargingStation.Connections.TryAddConnection(
+                     I18NString.Create(description),
+                     URL.Parse($"wss://127.0.0.1:{csms.OCPPServerSettings.TCPPort}"),
+                     "CSMS",
+                     true,
+                     null,
+                     certificate,
+                     out var connection,
+                     out var error,
+                     Encoding: DataFormat
+                ),
+                Is.True, error
+            );
+
+            await Until(() => StatusOf(chargingStation, connection!) == ConnectionStatus.Connected,  $"'{login}' connecting over webSocket mTLS", chargingStation, csms);
+            await Until(() => IsConnectedAt(csms, login),                                            $"'{login}' being let in by its certificate", chargingStation, csms);
+            await Until(() => RegistrationOf(chargingStation)        == "Accepted",                  $"'{login}' being accepted by the CSMS",     chargingStation, csms);
+
+
+            //var station = await AStationAtTheCSMS(Transport, "cs001");
+
+            //Assert.That(atTheCSMS, Does.Contain("BootNotification"), $"The station's BootNotification did not reach the CSMS.{Story(station)}");
+
+            //if (Transport == "certificate")
+            //{
+
+            //    var judgement = station.LastJudgementOf(Station.OCPPCertificateUsage, "127.0.0.1");
+
+            //    Assert.Multiple(() => {
+            //        Assert.That(CSMS.OCPPServerTLS,           Is.True,  "The station port of the CSMS does not speak TLS.");
+            //        Assert.That(judgement?.Accepted,          Is.True,  $"The station did not believe the CSMS.{Story(station)}");
+            //        Assert.That(judgement?.RootFingerprint,   Is.EqualTo(CertificateEntry.ThumbprintOf(ca!)),
+            //                    "The CSMS was believed through something else than the operator's CA.");
+            //        Assert.That(CSMS.StationCertificates.Get("cs001", "ChargingStationCertificate")?.Source, Is.EqualTo("presented"),
+            //                    "The CSMS does not know the certificate the station signed in with.");
+            //        Assert.That(CSMS.Log.Recent(200).Select(entry => entry.Message),
+            //                    Has.Some.Contains("'cs001' signed in").And.Contains("with a certificate (security profile 3)"));
+            //    });
+
+            //}
+
+            //await TheThreeCards(station, Transport);
+
+        }
+
+        #endregion
+
 
     }
 

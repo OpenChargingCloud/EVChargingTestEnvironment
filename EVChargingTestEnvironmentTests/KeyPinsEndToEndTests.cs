@@ -22,8 +22,10 @@ using Newtonsoft.Json.Linq;
 
 using NUnit.Framework;
 
+using org.GraphDefined.Vanaheimr.Illias;
 using org.GraphDefined.Vanaheimr.Hermod;
 using org.GraphDefined.Vanaheimr.Hermod.DNS;
+using org.GraphDefined.Vanaheimr.Hermod.HTTP;
 
 using cloud.charging.open.protocols.WWCP.Node.KeyPins;
 using cloud.charging.open.protocols.WWCP.Node.Configuration;
@@ -228,7 +230,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
                                  BridgeDebugLog:  false
                              );
 
-            Assert.That(management.WebSocketLogins.TrySetPassword(ControllerId, UplinkPassword, null, "tests", out var error), Is.True, error);
+            Assert.That(management.WebSocketLogins.TrySetPasswordAuthentication(ControllerId, UplinkPassword, null, I18NString.Create("tests"), out var error), Is.True, error);
 
             // A local controller's login: what it forwards in the name of the
             // stations behind it is taken, which a station's would not be.
@@ -280,7 +282,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
             Assert.That(localController.Node.Id.ToString(), Is.EqualTo(ControllerId));
 
             Assert.That(localController.TrySetUplinkPassword(ControllerId, UplinkPassword, out var uplinkError),                     Is.True, uplinkError);
-            Assert.That(localController.WebSocketLogins.TrySetPassword(StationId,    StationPassword, null, "tests", out var loginError), Is.True, loginError);
+            Assert.That(localController.WebSocketLogins.TrySetPasswordAuthentication(StationId,    StationPassword, null, I18NString.Create("tests"), out var loginError), Is.True, loginError);
 
             return localController;
 
@@ -342,11 +344,11 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             Assert.That(station.Connections.TryAddPinSetSigner(csmsSigner, "The CSMS", out var signerError, out _), Is.True, signerError);
 
-            Assert.That(station.Connections.TryAddBasicAuthentication(StationId, StationPassword, "The local controller", out var authentication, out var error),
+            Assert.That(station.Connections.TryAddPasswordAuthentication(StationId, StationPassword, I18NString.Create("The local controller"), out var authentication, out var error),
                         Is.True, error);
 
-            Assert.That(station.Connections.TryAddConnection("The local controller",
-                                                             $"wss://127.0.0.1:{LC.OCPPServerSettings.TCPPort}/{StationId}",
+            Assert.That(station.Connections.TryAddConnection(I18NString.Create("The local controller"),
+                                                             URL.Parse($"wss://127.0.0.1:{LC.OCPPServerSettings.TCPPort}/{StationId}"),
                                                              "localcontroller",
                                                              true,
                                                              authentication,

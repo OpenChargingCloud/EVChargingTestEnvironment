@@ -43,6 +43,7 @@ using WWCPNode    = cloud.charging.open.protocols.WWCP.Node.WWCPNode;
 //using Controller  = cloud.charging.open.LocalController.LocalController;
 //using Station     = cloud.charging.open.ChargingStation.ChargingStation;
 using org.GraphDefined.Vanaheimr.Illias;
+using org.GraphDefined.Vanaheimr.Hermod.HTTP;
 
 #endregion
 
@@ -126,16 +127,16 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         #endregion
 
 
-        #region GW_to_LC_viaWS(Transport, Authentication)
+        #region WebSocket(Transport, Authentication)
 
         /// <summary>
         /// The gateway dials the local controller and is let in. Whether it is accepted is
         /// for the CSMS above the local controller to say, and there is none here: so it
         /// is the line, at both its ends, that is tested.
         /// </summary>
-        [TestCase("ws", "basic")]
-        public async Task GW_to_LC_viaWS(String  Transport,
-                                         String  Authentication)
+        [TestCase("ws", authPassword)]
+        public async Task WebSocket(String  Transport,
+                                    String  Authentication)
         {
 
             if (gateway is null)
@@ -160,8 +161,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             Assert.That(
                 gateway.Connections.TryAddConnection(
-                     description,
-                     $"{Transport}://{login}@127.0.0.1:{localController.OCPPServerSettings.TCPPort}",
+                     I18NString.Create(description),
+                     URL.Parse($"{Transport}://{login}@127.0.0.1:{localController.OCPPServerSettings.TCPPort}"),
                      "LocalController",
                      true,
                      credentials,
