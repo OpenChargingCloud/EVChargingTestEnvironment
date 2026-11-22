@@ -345,13 +345,15 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
         /// <summary>
         /// The WebSocket logins of the node that is connected to: of its station
-        /// port, or of the WebSocket port of OCPI of an EMSP.
+        /// port, of the WebSocket port of OCPI of an EMSP, or of the WebSocket
+        /// port of Modbus of an energy meter.
         /// </summary>
         protected static WebSocketLogins WebSocketLoginsOf(WWCPNode Served)
 
             => Served switch {
-                   OCPPServingNode  node  => node.WebSocketLogins,
-                   EMSP.EMSP        emsp  => emsp.WebSocketLogins,
+                   OCPPServingNode                        node   => node.WebSocketLogins,
+                   EMSP.EMSP                              emsp   => emsp.WebSocketLogins,
+                   EnergyMeters.ModbusTLS.ModbusTLSEnergyMeter  meter  => meter.WebSocketLogins,
                    _                      => throw new ArgumentException($"'{Served.NodeNoun}' has no WebSocket logins these tests know.", nameof(Served))
                };
 
@@ -362,8 +364,9 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         protected static ClientTrustStore ClientTrustOf(WWCPNode Served)
 
             => Served switch {
-                   OCPPServingNode  node  => node.ClientTrust,
-                   EMSP.EMSP        emsp  => emsp.ClientTrust,
+                   OCPPServingNode                        node   => node.ClientTrust,
+                   EMSP.EMSP                              emsp   => emsp.ClientTrust,
+                   EnergyMeters.ModbusTLS.ModbusTLSEnergyMeter  meter  => meter.ClientTrust,
                    _                      => throw new ArgumentException($"'{Served.NodeNoun}' accepts no client certificates these tests know.", nameof(Served))
                };
 
@@ -574,6 +577,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
                                                   Concat(node.StationSSHServer?.ConnectedNetworkingNodeIds ?? []),
                     EMSP.EMSP        emsp  => emsp.OCPIServers.   SelectMany(server => server.ConnectedNetworkingNodeIds).
                                                   Concat(emsp.OCPISshServers.SelectMany(server => server.ConnectedNetworkingNodeIds)),
+                    EnergyMeters.ModbusTLS.ModbusTLSEnergyMeter meter
+                                           => meter.MeterReadersIn.Select(cloud.charging.open.protocols.WWCP.NetworkingNode.NetworkingNode_Id.Parse),
                     _                      => []
                 }).
                 Any(networkingNodeId => networkingNodeId.ToString() == Login.ToString());
