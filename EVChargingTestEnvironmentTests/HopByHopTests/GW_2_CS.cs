@@ -81,7 +81,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             gateway          = new Gateway.Gateway(
                                    DNSClient:        dnsClient,
-                                   HTTPPort:         IPPort.Parse(TestPorts.Free()),
+                                   HTTPPort:         TestPorts.Free(),
                                    AccountsPath:     gwDirectory.Accounts,
                                    ConfigFile:       gwDirectory.ConfigFile,
                                    LogToConsole:     false,
@@ -95,7 +95,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             chargingStation  = new ChargingStation.ChargingStation(
                                    DNSClient:        dnsClient,
-                                   HTTPPort:         IPPort.Parse(TestPorts.Free()),
+                                   HTTPPort:         TestPorts.Free(),
                                    NoKiosk:          true,
                                    AccountsPath:     csDirectory.Accounts,
                                    ConfigFile:       csDirectory.ConfigFile,
@@ -131,8 +131,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         #region WebSocket(Transport, Authentication)
 
         /// <summary>
-        /// The gateway dials the charging station, as the CSMS does (see
-        /// CSMS_2_CS): every node dials downwards alike. The connection names
+        /// The gateway connects to the charging station, as the CSMS does (see
+        /// CSMS_2_CS): every node connects downwards alike. The connection names
         /// the charging station at its other end, which it is spoken to by;
         /// the charging station lets it in with the login it signs in with.
         /// </summary>
@@ -154,13 +154,13 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             }
 
 
-            var login        = "gw-" + RandomExtensions.RandomString(8);
+            var login        = User_Id.Parse("gw-" + RandomExtensions.RandomString(8));
             var node         = chargingStation.Id?.ToString() ?? ChargingStation.ChargingStation.DefaultOCPP21NodeId;
-            var description  = $"{gateway.OCPP.NodeId} --({Transport}/{Authentication})--> {chargingStation.Id}";
+            var description  = I18NString.Create($"{gateway.OCPP.NodeId} --({Transport}/{Authentication})--> {chargingStation.Id}");
 
             Assert.That(
                 gateway.Connections.TryAddConnection(
-                     I18NString.Create(description),
+                     description,
                      URL.Parse($"{Transport}://{login}@127.0.0.1:{chargingStation.OCPPServerSettings.TCPPort}"),
                      "ChargingStation",
                      true,

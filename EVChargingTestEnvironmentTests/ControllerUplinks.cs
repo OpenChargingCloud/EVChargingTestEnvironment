@@ -57,7 +57,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
         /// The line signs in with a password.
         /// </summary>
         public static Boolean TrySetUplinkPassword(this Controller  Controller,
-                                                   String           Login,
+                                                   User_Id          Login,
                                                    String           Password,
                                                    out String?      Error)
         {

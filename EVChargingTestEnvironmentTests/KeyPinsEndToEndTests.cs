@@ -49,7 +49,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
     /// Key pins from end to end ("Key Pins and TLS 1.3 Raw Public Keys for Local
     /// Controllers", sections 5.5 to 5.7, work package K4, phase C): a real
     /// charging station that learns its local controller's key pin on first use
-    /// over wss://, a real controller that dials a real CSMS in the overlay
+    /// over wss://, a real controller that connects to a real CSMS in the overlay
     /// network, and the CSMS that confirms the pin with a signed pin set - and
     /// rolls the controller's key over without the station losing its
     /// connection.
@@ -78,7 +78,10 @@ namespace cloud.charging.open.TestEnvironment.Tests
         #region Data
 
         private const String  ControllerId     = "lc001";
+
+        private static readonly User_Id ControllerLogin = User_Id.Parse(ControllerId);
         private const String  StationId        = "cs001";
+        private static readonly User_Id StationLogin = User_Id.Parse(StationId);
 
         private const String  UplinkPassword   = "the-controllers-password-at-its-csms";
         private const String  StationPassword  = "the-stations-password-at-its-controller";
@@ -100,7 +103,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
         /// <summary>
         /// A CSMS with a signing key for pin sets, and a controller with a
-        /// server key on its station port that dials the CSMS in the overlay
+        /// server key on its station port that connects to the CSMS in the overlay
         /// network, connected.
         /// </summary>
         [SetUp]
@@ -188,7 +191,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
         /// <summary>
         /// A name resolver with its servers written down: nothing here resolves
-        /// a name, everything is dialled at 127.0.0.1.
+        /// a name, everything is connected to at 127.0.0.1.
         /// </summary>
         private DNSClient Resolver()
         {
@@ -218,7 +221,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
                 new JProperty("webSocketServer",  new JObject(
                     new JProperty("enabled",           true),
                     new JProperty("address",           "127.0.0.1"),
-                    new JProperty("port",              TestPorts.Free()),
+                    new JProperty("port",              TestPorts.Free().ToUInt16()),
                     new JProperty("clientAuthentication",  new JArray("httpAuthWithoutTLS")),
                     new JProperty("subprotocols",      new JArray("ocpp2.1"))
                 ))
@@ -226,18 +229,18 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             var management = new Management(
                                  DNSClient:       Resolver(),
-                                 HTTPPort:        IPPort.Parse(TestPorts.Free()),
+                                 HTTPPort:        TestPorts.Free(),
                                  AccountsPath:    Path.Combine(Directory, "accounts"),
                                  ConfigFile:      new WWCPConfigFile(configFile),
                                  LogToConsole:    false,
                                  BridgeDebugLog:  false
                              );
 
-            Assert.That(management.WebSocketLogins.TrySetPasswordAuthentication(ControllerId, UplinkPassword, null, I18NString.Create("tests"), out var error), Is.True, error);
+            Assert.That(management.WebSocketLogins.TrySetPasswordAuthentication(ControllerLogin, UplinkPassword, null, I18NString.Create("tests"), out var error), Is.True, error);
 
             // A local controller's login: what it forwards in the name of the
             // stations behind it is taken, which a station's would not be.
-            Assert.That(management.WebSocketLogins.TrySetLocalController(ControllerId, true, out var markError), Is.True, markError);
+            Assert.That(management.WebSocketLogins.TrySetLocalController(ControllerLogin, true, out var markError), Is.True, markError);
 
             return management;
 
@@ -245,7 +248,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
         /// <summary>
         /// A controller whose station port speaks TLS with the server key made
-        /// beforehand, security profile 2, and which dials the CSMS in the
+        /// beforehand, security profile 2, and which connects to the CSMS in the
         /// overlay network - which is what lets the CSMS address the stations
         /// behind it.
         /// </summary>
@@ -267,7 +270,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
                 new JProperty("webSocketServer",  new JObject(
                     new JProperty("enabled",           true),
                     new JProperty("address",           "127.0.0.1"),
-                    new JProperty("port",              TestPorts.Free()),
+                    new JProperty("port",              TestPorts.Free().ToUInt16()),
                     new JProperty("clientAuthentication",  new JArray("httpAuthOverTLS")),
                     new JProperty("subprotocols",      new JArray("ocpp2.1"))
                 ))
@@ -275,7 +278,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             var localController = new Controller(
                                       DNSClient:       Resolver(),
-                                      HTTPPort:        IPPort.Parse(TestPorts.Free()),
+                                      HTTPPort:        TestPorts.Free(),
                                       AccountsPath:    Path.Combine(Directory, "accounts"),
                                       ConfigFile:      new WWCPConfigFile(configFile),
                                       LogToConsole:    false,
@@ -284,8 +287,8 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             Assert.That(localController.Node.Id.ToString(), Is.EqualTo(ControllerId));
 
-            Assert.That(localController.TrySetUplinkPassword(ControllerId, UplinkPassword, out var uplinkError),                     Is.True, uplinkError);
-            Assert.That(localController.WebSocketLogins.TrySetPasswordAuthentication(StationId,    StationPassword, null, I18NString.Create("tests"), out var loginError), Is.True, loginError);
+            Assert.That(localController.TrySetUplinkPassword(ControllerLogin, UplinkPassword, out var uplinkError),                     Is.True, uplinkError);
+            Assert.That(localController.WebSocketLogins.TrySetPasswordAuthentication(StationLogin,    StationPassword, null, I18NString.Create("tests"), out var loginError), Is.True, loginError);
 
             return localController;
 
@@ -306,7 +309,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             var station = new Station(
                               DNSClient:       Resolver(),
-                              HTTPPort:        IPPort.Parse(TestPorts.Free()),
+                              HTTPPort:        TestPorts.Free(),
                               NoKiosk:         true,
                               AccountsPath:    Path.Combine(directory, "accounts"),
                               ConfigFile:      new WWCPConfigFile(configFile),
@@ -340,7 +343,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
         }
 
         /// <summary>
-        /// A station behind the controller, as it is commissioned: it dials the
+        /// A station behind the controller, as it is commissioned: it connects to the
         /// controller's wss:// port with its password, pins nothing, learns the
         /// key the controller shows on first use, and believes pin sets the
         /// CSMS signed - started.
@@ -352,7 +355,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             Assert.That(station.Connections.TryAddPinSetSigner(csmsSigner, "The CSMS", out var signerError, out _), Is.True, signerError);
 
-            Assert.That(station.Connections.TryAddPasswordAuthentication(StationId, StationPassword, I18NString.Create("The local controller"), out var authentication, out var error),
+            Assert.That(station.Connections.TryAddPasswordAuthentication(StationLogin, StationPassword, I18NString.Create("The local controller"), out var authentication, out var error),
                         Is.True, error);
 
             Assert.That(station.Connections.TryAddConnection(I18NString.Create("The local controller"),
@@ -440,7 +443,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
                        Concat(new (String Who, WWCPNode? Node)[] { ("CSMS", csms), ("LC", controller) }.
                                   SelectMany(speaker => speaker.Node?.Log.Recent(100).Select(entry => $"  {speaker.Who,-4} {entry.Timestamp:HH:mm:ss.fff} [{entry.LevelName}] {entry.Message}") ?? [])).
                        Concat(Station?.Log.Recent(100).Select(entry => $"  CS   {entry.Timestamp:HH:mm:ss.fff} [{entry.LevelName}] {entry.Message}") ?? []).
-                       Concat(Station?.DialledConnections.Select(said => $"  CS   dialled {said.Key}: {said.Value}") ?? [])
+                       Concat(Station?.OutboundConnections.Select(said => $"  CS   connection {said.Key}: {said.Value}") ?? [])
                );
 
         #endregion
@@ -479,17 +482,17 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
         #endregion
 
-        #region TheControllersKey_IsRolledOver_WithoutTheStationDropping_AndTheStationDialsTheNextKey()
+        #region TheControllersKey_IsRolledOver_WithoutTheStationDropping_AndTheStationConnectsToTheNextKey()
 
         /// <summary>
         /// The controller announces a next key; the CSMS rolls it over - the
         /// station handed [current, next], asked whether it has the next pin,
         /// the controller switched, the station handed [next] - while the
-        /// station stays connected. Started again, the station dials the
+        /// station stays connected. Started again, the station connects to the
         /// controller, which shows its next key now, and gets in.
         /// </summary>
         [Test]
-        public async Task TheControllersKey_IsRolledOver_WithoutTheStationDropping_AndTheStationDialsTheNextKey()
+        public async Task TheControllersKey_IsRolledOver_WithoutTheStationDropping_AndTheStationConnectsToTheNextKey()
         {
 
             var (station, connection) = await AConfirmedStation();
@@ -545,7 +548,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
                 Assert.That(IsConnected(station, connection),                    Is.True);
             });
 
-            #region Started again: the station dials the controller's next key
+            #region Started again: the station connects to the controller's next key
 
             var directory = Path.GetDirectoryName(station.ConfigFile.Path)!;
 
@@ -555,7 +558,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
             var again           = await Started(NewStation(directory));
             var againConnection = EntryOf(again).Id;
 
-            await Until(() => IsConnected(again, againConnection),     "The station dialling the controller again, which shows its next key", again);
+            await Until(() => IsConnected(again, againConnection),     "The station connecting to the controller again, which shows its next key", again);
             await Until(() => RegistrationOf(again) == "Accepted",     "The station being accepted again",                                     again);
 
             Assert.Multiple(() => {

@@ -30,7 +30,7 @@ files between five directories, and every step of it is a place to put the
 wrong one.
 
 The EMSP is the other end of an OCPI roaming agreement, and the CSMS is the
-near end: beside being the thing the stations dial, it is a charge point
+near end: beside being the thing the stations connect to, it is a charge point
 operator. At the start — after everything is listening, because a registration
 is HTTP in both directions — the operator walks over: it fetches the provider's
 versions, POSTs its credentials, and the provider calls back before it answers.
@@ -48,12 +48,12 @@ This repository is that wiring, and nothing else. It adds no sixth component.
 2. **The configuration files**, because every one of these five reads its own
    while it is being built and several of them open ports according to it.
 3. **The five objects**, from the top down: the CSMS knows nothing of what is
-   below it, and everything below has to be told where to dial. The EMSP
-   stands beside the CSMS and is told nothing: nothing here dials it.
+   below it, and everything below has to be told where to connect to. The EMSP
+   stands beside the CSMS and is told nothing: nothing here connects to it.
 4. **The certificates and logins handed out** — through the same methods each
    component's web interface calls, so everything handed out here shows up in
    the browser where it would have been put by hand.
-5. **Start**, top down again, so nothing dials a port that is not open yet.
+5. **Start**, top down again, so nothing connects to a port that is not open yet.
 
 
 ### Getting it
@@ -143,7 +143,7 @@ one switch away:
 | `n+2` | the station's display — a second server, with no sign-in on it |
 | `n+3` | the local controller's web interface |
 | `n+4` | the CSMS's web interface |
-| `n+5` | the CSMS's OCPP port, where stations and controllers dial it |
+| `n+5` | the CSMS's OCPP port, where stations and controllers connect to it |
 | `n+6` | the local controller's OCPP port |
 | `n+7` | the coupler's 10BASE-T1S bus under `--mcs` — a UDP multicast group, `239.151.18.1`, not a listener |
 | `n+8` | the EMSP's web interface, with its OCPI endpoints below `/ext` on the same port |
@@ -262,13 +262,13 @@ nine more — for pointing at either side on purpose. See
 ### OCPP and TLS
 
 Security profile 1 — a password over an unencrypted WebSocket — by default.
-`--ocpp-tls` encrypts the two OCPP ports and has them dialled with `wss://`
+`--ocpp-tls` encrypts the two OCPP ports and has them connected to with `wss://`
 under security profile 2, and nothing has to be installed on the machine for
 it: the OCPP root is in no certificate store but the ones of this environment.
 
-- **The one that dials.** A charging station judges the server of a `wss://`
+- **The one that connects.** A charging station judges the server of a `wss://`
   connection as it judges every server it connects to: is the certificate issued
-  for the name it dialled, and does its chain end at a root the machine trusts —
+  for the name it connected to, and does its chain end at a root the machine trusts —
   *or* at a TLS root of the station's own certificate store kept for `ocpp`, or
   at one of the roots the connection names. A local controller judges its CSMS
   the same way, against the TLS roots of its own store. The OCPP root is
@@ -462,13 +462,13 @@ and the EMSP is there, started from either end — the CSMS repository has no
 EMSP beside it and can only test against a stub, the EMSP repository has no
 CSMS, and a stub agrees with whatever it is sent.
 
-OCPP over SSH is there the same way: a real charging station dialling a real
+OCPP over SSH is there the same way: a real charging station connecting to a real
 local controller — and, in a second fixture, a real CSMS — at `ssh://`, signed
 in with a key of its own, on the subsystem `ocpp@open.charging.cloud` of that
 server's SSH server — booting, being asked things, sending binary data, coming
 back after the server restarted, beside a station on a WebSocket. And what must
 not get through: a host key other than the one pinned, a station that pins none
-and does not trust on first use — it is not dialled at all —, a key the server
+and does not trust on first use — it is not connected to at all —, a key the server
 does not know, a HELLO that names another station, no HELLO at all, a shell or SFTP
 or a forwarded port, an account without the right, a station an access rule
 shuts out, a key taken away while its session runs, and a frame longer than the

@@ -77,13 +77,13 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
                                    SearchForIPv6DNSServers: false
                                );
 
-            // Without the section "csms": a node below is dialled all the
+            // Without the section "csms": a node below is connected to all the
             // same, whether the controller reports to a CSMS or not.
             var lcDirectory    = NewNodeDirectory("lc");
 
             localController  = new LocalController.LocalController(
                                    DNSClient:        dnsClient,
-                                   HTTPPort:         IPPort.Parse(TestPorts.Free()),
+                                   HTTPPort:         TestPorts.Free(),
                                    AccountsPath:     lcDirectory.Accounts,
                                    ConfigFile:       lcDirectory.ConfigFile,
                                    LogToConsole:     false,
@@ -97,7 +97,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             chargingStation  = new ChargingStation.ChargingStation(
                                    DNSClient:        dnsClient,
-                                   HTTPPort:         IPPort.Parse(TestPorts.Free()),
+                                   HTTPPort:         TestPorts.Free(),
                                    NoKiosk:          true,
                                    AccountsPath:     csDirectory.Accounts,
                                    ConfigFile:       csDirectory.ConfigFile,
@@ -133,8 +133,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         #region WebSocket(Transport, Authentication)
 
         /// <summary>
-        /// The local controller dials the charging station, as the CSMS does (see
-        /// CSMS_2_CS): every node dials downwards alike. The connection names
+        /// The local controller connects to the charging station, as the CSMS does (see
+        /// CSMS_2_CS): every node connects downwards alike. The connection names
         /// the charging station at its other end, which it is spoken to by;
         /// the charging station lets it in with the login it signs in with.
         /// </summary>
@@ -156,13 +156,13 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             }
 
 
-            var login        = "lc-" + RandomExtensions.RandomString(8);
+            var login        = User_Id.Parse("lc-" + RandomExtensions.RandomString(8));
             var node         = chargingStation.Id?.ToString() ?? ChargingStation.ChargingStation.DefaultOCPP21NodeId;
-            var description  = $"{localController.OCPP.NodeId} --({Transport}/{Authentication})--> {chargingStation.Id}";
+            var description  = I18NString.Create($"{localController.OCPP.NodeId} --({Transport}/{Authentication})--> {chargingStation.Id}");
 
             Assert.That(
                 localController.Connections.TryAddConnection(
-                     I18NString.Create(description),
+                     description,
                      URL.Parse($"{Transport}://{login}@127.0.0.1:{chargingStation.OCPPServerSettings.TCPPort}"),
                      "ChargingStation",
                      true,
@@ -175,8 +175,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
                 Is.True, error
             );
 
-            await Until(() => StatusOf(localController, connection!) == ConnectionStatus.Connected, $"'{login}' connecting over {Transport}", localController, chargingStation);
-            await Until(() => IsConnectedAt(chargingStation, login),                          $"'{login}' being let in by the charging station", localController, chargingStation);
+            await Until(() => StatusOf(localController, connection!) == ConnectionStatus.Connected, $"'{login}' connecting over {Transport}",          localController, chargingStation);
+            await Until(() => IsConnectedAt(chargingStation, login),                                $"'{login}' being let in by the charging station", localController, chargingStation);
 
 
             //var station = await AStationAtTheCSMS(Transport, "cs001");

@@ -52,7 +52,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
 {
 
     /// <summary>
-    /// OCPP over SSH from end to end, with a real local controller as the
+    /// OCPP-over-SSH from end to end, with a real local controller as the
     /// server: the tests of <see cref="OCPPOverSSHTests"/>, and the chain up
     /// to a CSMS.
     /// </summary>
@@ -76,6 +76,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
         /// Who the controller is at its CSMS: its OCPP node's default name.
         /// </summary>
         private const String  ControllerId    = "lc001";
+        private static readonly User_Id ControllerLogin = User_Id.Parse(ControllerId);
 
         /// <summary>
         /// The controller's password at the CSMS.
@@ -107,7 +108,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             AnswersForTheCSMS(controller);
 
-            Assert.That(controller.OCPPOverSSHServed, Is.True, "OCPP over SSH is switched on in the file, and not served.");
+            Assert.That(controller.OCPPOverSSHServed, Is.True, "OCPP-over-SSH is switched on in the file, and not served.");
 
         }
 
@@ -131,32 +132,32 @@ namespace cloud.charging.open.TestEnvironment.Tests
         protected override OCPPSshServer  StationSSHServer
             => LC.StationSSHServer!;
 
-        protected override UInt16         WebSocketPort
-            => LC.OCPPServerSettings.TCPPort!.Value.ToUInt16();
+        protected override IPPort         WebSocketPort
+            => LC.OCPPServerSettings.TCPPort!.Value;
 
         protected override IEnumerable<NetworkingNode_Id> WebSocketStations
             => LC.StationServer!.ConnectedNetworkingNodeIds;
 
-        protected override void GiveTheKey(String Login, ISshHostKey Key, String? Group = null)
+        protected override void GiveTheKey(User_Id Login, ISshHostKey Key, String? Group = null)
         {
             Assert.That(LC.TryAddStationSSHKey(Login, LineOf(Key), "test", Group, null, "tests", out _, out var error, out _),
                         Is.True, error);
         }
 
-        protected override void TakeAwayTheKey(String Login, String Fingerprint)
+        protected override void TakeAwayTheKey(User_Id Login, String Fingerprint)
         {
             Assert.That(LC.WebSocketLogins.TryRemoveSSHKey(Login, Fingerprint, out var error), Is.True, error);
         }
 
-        protected override void GiveThePassword(String Login, String Password)
+        protected override void GiveThePassword(User_Id Login, String Password)
         {
             Assert.That(LC.WebSocketLogins.TrySetPasswordAuthentication(Login, Password, null, I18NString.Create("tests"), out var error), Is.True, error);
         }
 
-        protected override Task<TriggerMessageResponse> AskForABootNotification(String Login)
+        protected override Task<TriggerMessageResponse> AskForABootNotification(User_Id Login)
 
             => LC.Node.TriggerMessage(
-                   Destination:       SourceRouting.To(NetworkingNode_Id.Parse(Login)),
+                   Destination:       SourceRouting.To(NetworkingNode_Id.Parse(Login.ToString())),
                    RequestedMessage:  MessageTrigger.BootNotification
                );
 
@@ -219,7 +220,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
                    new JProperty("webSocketServer",  new JObject(
                        new JProperty("enabled",           true),
                        new JProperty("address",           "127.0.0.1"),
-                       new JProperty("port",              TestPorts.Free()),
+                       new JProperty("port",              TestPorts.Free().ToUInt16()),
                        new JProperty("clientAuthentication",  new JArray("httpAuthWithoutTLS")),
                        new JProperty("subprotocols",      new JArray("ocpp2.1", "ocpp2.0.1")),
                        new JProperty("ssh",               new JObject(
@@ -229,7 +230,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
                    )),
                    new JProperty("ssh",         new JObject(
                        new JProperty("enabled",           true),
-                       new JProperty("port",              TestPorts.Free()),
+                       new JProperty("port",              TestPorts.Free().ToUInt16()),
 
                        // Served, so that a station refused SFTP is refused
                        // for being a station, and not because nobody gets it.
@@ -253,7 +254,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
             if (Configuration is not null)
                 File.WriteAllText(configFile, Configuration.ToString());
 
-            controllerHTTPPort = HTTPPort ?? IPPort.Parse(TestPorts.Free());
+            controllerHTTPPort = HTTPPort ?? TestPorts.Free();
 
             var localController = new Controller(
                                       DNSClient:       Resolver(),
@@ -266,7 +267,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             Assert.That(localController.Node.Id.ToString(), Is.EqualTo(ControllerId));
 
-            Assert.That(localController.TrySetUplinkPassword(ControllerId, UplinkPassword, out var error), Is.True, error);
+            Assert.That(localController.TrySetUplinkPassword(ControllerLogin, UplinkPassword, out var error), Is.True, error);
 
             return localController;
 
@@ -317,7 +318,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
                 new JProperty("webSocketServer",  new JObject(
                     new JProperty("enabled",           true),
                     new JProperty("address",           "127.0.0.1"),
-                    new JProperty("port",              TestPorts.Free()),
+                    new JProperty("port",              TestPorts.Free().ToUInt16()),
                     new JProperty("clientAuthentication",  new JArray("httpAuthWithoutTLS")),
                     new JProperty("subprotocols",      new JArray("ocpp2.1", "ocpp2.0.1"))
                 ))
@@ -325,19 +326,19 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             var management = new Management(
                                  DNSClient:       Resolver(),
-                                 HTTPPort:        IPPort.Parse(TestPorts.Free()),
+                                 HTTPPort:        TestPorts.Free(),
                                  AccountsPath:    Path.Combine(Directory, "accounts"),
                                  ConfigFile:      new WWCPConfigFile(configFile),
                                  LogToConsole:    false,
                                  BridgeDebugLog:  false
                              );
 
-            Assert.That(management.WebSocketLogins.TrySetPasswordAuthentication(ControllerId, UplinkPassword, null, I18NString.Create("tests"), out var error), Is.True, error);
+            Assert.That(management.WebSocketLogins.TrySetPasswordAuthentication(ControllerLogin, UplinkPassword, null, I18NString.Create("tests"), out var error), Is.True, error);
 
             // A local controller's login: in the overlay network, which the
-            // controller dials by default, what it forwards in the name of
+            // controller connects to by default, what it forwards in the name of
             // its stations is taken only from a login marked as one.
-            Assert.That(management.WebSocketLogins.TrySetLocalController(ControllerId, true, out var markError), Is.True, markError);
+            Assert.That(management.WebSocketLogins.TrySetLocalController(ControllerLogin, true, out var markError), Is.True, markError);
 
             return management;
 
@@ -439,7 +440,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             var atTheCSMS     = await AControllerReportingToACSMS();
 
-            var (station, _)  = await AStationDialling("cs001");
+            var (station, _)  = await AStationConnecting(User_Id.Parse("cs001"));
 
             // Sent by no node by itself: asked for, as after a reboot.
             _ = station.SendBootNotifications();
@@ -479,7 +480,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             var atTheCSMS     = await AControllerReportingToACSMS();
 
-            var (station, _)  = await AWebSocketStation("cs-ws");
+            var (station, _)  = await AWebSocketStation(User_Id.Parse("cs-ws"));
 
             // Sent by no node by itself: asked for, as after a reboot.
             _ = station.SendBootNotifications();

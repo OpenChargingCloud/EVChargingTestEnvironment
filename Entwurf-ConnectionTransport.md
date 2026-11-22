@@ -36,18 +36,18 @@ den Tests.
 
 ### 1.2 OCPP sitzt schon in WWCP_Node
 
-Seit aa9745d („Every WWCP node dials“) liegt das Wählen in WWCP_Node. Die
+Seit aa9745d („Every WWCP node dials“) liegt das Verbinden in WWCP_Node. Die
 OCPP-Begriffe sind dabei mitgewandert:
 
 | Begriff | Treffer in WWCP_Node außerhalb von `ConnectionEntry.cs` | Dateien |
 |---|---|---|
-| `OCPPVersion` | 96 | `ConnectionRules`, `ConnectionState`, `ConnectionStore`, `PeerEntry`, `DiallingProtocol`, `WWCPNode.Accepting/.Connections/.Dialling/.Hooks/.KeyPins/.Peers` |
+| `OCPPVersion` | 96 | `ConnectionRules`, `ConnectionState`, `ConnectionStore`, `PeerEntry`, `ConnectingProtocol`, `WWCPNode.Accepting/.Connections/.Connecting/.Hooks/.KeyPins/.Peers` |
 | `ConnectionType` | 41 | `ConnectionRules`, `ConnectionStore`, `PeerEntry`, `WWCPNode.Connections`, `WWCPNode.HTTPS`, Pipelines |
-| `SignatureFormats` | 24 | `ConnectionStore`, `DiallingProtocol`, `WWCPNode.Connections`, `WWCPNode.Hooks` |
+| `SignatureFormats` | 24 | `ConnectionStore`, `ConnectingProtocol`, `WWCPNode.Connections`, `WWCPNode.Hooks` |
 | `RemoteNodeId` | 21 | `ConnectionRules`, `ConnectionStore`, `WWCPNode.Connections` |
 
 Beispiele:
-- `DiallingProtocol.DiallingNodeOrNoneOf(OCPPVersion)`
+- `ConnectingProtocol.ConnectingNodeOrNoneOf(OCPPVersion)`
 - `ConnectionRules.Check(url, type, version, …)` mit „speaks no OCPP 1.6“
 - `PeerEntry`: „Every endpoint of a peer speaks one OCPP version“
 
@@ -282,7 +282,7 @@ Was als Invariante im Konstruktor bleibt:
 ## 4. Schicht 2: Rolle im Knotennetz (WWCP_Node, Wählen)
 
 ```csharp
-namespace cloud.charging.open.protocols.WWCP.Node.Dialling;
+namespace cloud.charging.open.protocols.WWCP.Node.Connecting;
 
 /// Wofür dieser Knoten eine Verbindung benutzt: wer am anderen Ende ist,
 /// unter welchem Namen, und ob er von selbst wählt.
@@ -310,14 +310,14 @@ public sealed record NodeLink(String    ConnectionId,   // → ConnectionEntry.I
   ```csharp
   switch (entry)
   {
-      case WebSocketConnection ws:  await DialWebSocket(ws, link, ct); break;
-      case SSHConnection       ssh: await DialSSH      (ssh, link, ct); break;
-      default: Fail(link, ConnectionStatus.NotConnected, $"Not connected: {entry.Where}: this node does not dial {entry.Transport}.");
+      case WebSocketConnection ws:  await ConnectOverWebSocket(ws, link, ct); break;
+      case SSHConnection       ssh: await ConnectOverSSH(ssh, link, ct); break;
+      default: Fail(link, ConnectionStatus.NotConnected, $"Not connected: {entry.Where}: this node does not connect over {entry.Transport}.");
   }
   ```
   Was am Ende über die Verbindung gesprochen wird, also WebSocket-Subprotokolle
   oder das SSH-Subsystem, liefert die Protokollschicht über den
-  `DiallingProtocol`-Hook, den es schon gibt.
+  `ConnectingProtocol`-Hook, den es schon gibt.
 
 ## 5. Schicht 3: OCPP (WWCP_OCPP_Node)
 
@@ -329,13 +329,13 @@ public sealed record OCPPUse(OCPPVersion            Version,
                              WWCPSignatureFormats?  SignatureFormats)  // null = Signaturrichtlinie
     : IUse
 {
-    public String[] SubProtocols => …;   // heute DiallingProtocol.SubProtocolsOf(entry)
+    public String[] SubProtocols => …;   // heute ConnectingProtocol.SubProtocolsOf(entry)
 }
 ```
 
 - Was heute mit `OCPPVersion` in WWCP_Node steht, kommt hierher, und
   WWCP_Node fragt es über die vorhandenen Hooks ab:
-  - `DiallingNodeOrNoneOf(OCPPVersion)` wird zu `DiallingNodeOrNoneOf(IUse)`.
+  - `ConnectingNodeOrNoneOf(OCPPVersion)` wird zu `ConnectingNodeOrNoneOf(IUse)`.
   - In `WWCPNode.Accepting` wird der Filter `entry.OCPPVersion == Version`
     zu einem Hook „Welcher Knoten nimmt diese eingehende Verbindung an?“.
   - `SetSignatureFormatsOf(ConnectionEntry, …)` und

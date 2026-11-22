@@ -82,7 +82,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             chargingStation    = new ChargingStation.ChargingStation(
                                      DNSClient:        dnsClient,
-                                     HTTPPort:         IPPort.Parse(TestPorts.Free()),
+                                     HTTPPort:         TestPorts.Free(),
                                      NoKiosk:          true,
                                      AccountsPath:     csDirectory.Accounts,
                                      ConfigFile:       csDirectory.ConfigFile,
@@ -98,7 +98,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             localController    = new LocalController.LocalController(
                                      DNSClient:        dnsClient,
-                                     HTTPPort:         IPPort.Parse(TestPorts.Free()),
+                                     HTTPPort:         TestPorts.Free(),
                                      AccountsPath:     lcDirectory.Accounts,
                                      ConfigFile:       lcDirectory.ConfigFile,
                                      LogToConsole:     false,
@@ -108,13 +108,13 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             await localController.Start();
 
 
-            // The CSMS is dialled by the local controller, with a password or
+            // The local controller connects to the CSMS, with a password or
             // one-time passwords - whatever the station below signs in with.
             var csmsDirectory  = NewServedNodeDirectory("csms", OverTLS ? "httpAuthOverTLS" : "httpAuthWithoutTLS");
 
             csms               = new CSMS.CSMS(
                                      DNSClient:        dnsClient,
-                                     HTTPPort:         IPPort.Parse(TestPorts.Free()),
+                                     HTTPPort:         TestPorts.Free(),
                                      AccountsPath:     csmsDirectory.Accounts,
                                      ConfigFile:       csmsDirectory.ConfigFile,
                                      LogToConsole:     false,
@@ -156,7 +156,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         #region WebSocket     (Authentication, DataFormat)
 
         /// <summary>
-        /// The station dials the local controller and is let in. Whether it is accepted is
+        /// The station connects to the local controller and is let in. Whether it is accepted is
         /// for the CSMS above the local controller to say, and there is none here: so it
         /// is the line, at both its ends, that is tested.
         /// </summary>
@@ -187,8 +187,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             }
 
 
-            var login        = "cs-" + RandomExtensions.RandomString(8);
-            var description  = $"{chargingStation.Id} --(webSocket/{Authentication}/{DataFormat})--> {localController.OCPP.NodeId}";
+            var login        = User_Id.Parse("cs-" + RandomExtensions.RandomString(8));
+            var description  = I18NString.Create($"{chargingStation.Id} --(webSocket/{Authentication}/{DataFormat})--> {localController.OCPP.NodeId}");
 
             var credentials  = Credentials(chargingStation, localController, login, Authentication, description);
 
@@ -196,7 +196,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             Assert.That(
                 chargingStation.Connections.TryAddConnection(
-                     I18NString.Create(description),
+                     description,
                      URL.Parse($"ws://{login}@127.0.0.1:{localController.OCPPServerSettings.TCPPort}"),
                      "LocalController",
                      true,
@@ -243,7 +243,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         #region WebSocketTLS  (Authentication, DataFormat)
 
         /// <summary>
-        /// The station dials the local controller and is let in. Whether it is accepted is
+        /// The station connects to the local controller and is let in. Whether it is accepted is
         /// for the CSMS above the local controller to say, and there is none here: so it
         /// is the line, at both its ends, that is tested.
         /// </summary>
@@ -274,8 +274,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             }
 
 
-            var login        = "cs-" + RandomExtensions.RandomString(8);
-            var description  = $"{chargingStation.Id} --(webSocketTLS/{Authentication}/{DataFormat})--> {localController.OCPP.NodeId}";
+            var login        = User_Id.Parse("cs-" + RandomExtensions.RandomString(8));
+            var description  = I18NString.Create($"{chargingStation.Id} --(webSocketTLS/{Authentication}/{DataFormat})--> {localController.OCPP.NodeId}");
 
             var credentials  = Credentials(chargingStation, localController, login, Authentication, description);
 
@@ -283,7 +283,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             Assert.That(
                 chargingStation.Connections.TryAddConnection(
-                     I18NString.Create(description),
+                     description,
                      URL.Parse($"wss://{login}@127.0.0.1:{localController.OCPPServerSettings.TCPPort}"),
                      "LocalController",
                      true,
@@ -330,8 +330,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         #region WebSocketMTLS (Authentication, DataFormat)
 
         /// <summary>
-        /// The whole chain: the local controller dials the CSMS over TLS with a
-        /// password or one-time passwords, the station dials the local
+        /// The whole chain: the local controller connects to the CSMS over TLS with a
+        /// password or one-time passwords, the station connects to the local
         /// controller over mutual TLS with a certificate of its own - and is
         /// accepted by the CSMS above the local controller. Both lines speak
         /// the given data format.
@@ -368,10 +368,10 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             #region The local controller, up to the CSMS: with a password or one-time passwords
 
             // Under its own name: in the overlay network what it sends comes from it.
-            var lcLogin        = localController.Node.Id.ToString();
-            var uplink         = $"{localController.OCPP.NodeId} --(webSocketTLS/{Authentication}/{DataFormat})--> {csms.OCPP.NodeId}";
+            var lcLogin        = User_Id.Parse(localController.Node.Id.ToString());
+            var description    = I18NString.Create($"{localController.OCPP.NodeId} --(webSocketTLS/{Authentication}/{DataFormat})--> {csms.OCPP.NodeId}");
 
-            var lcCredentials  = Credentials(localController, csms, lcLogin, Authentication, uplink);
+            var lcCredentials  = Credentials(localController, csms, lcLogin, Authentication, description);
 
             BelievesTheTestCA(localController);
 
@@ -381,7 +381,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             Assert.That(
                 localController.Connections.TryAddConnection(
-                     I18NString.Create(uplink),
+                     description,
                      URL.Parse($"wss://{lcLogin}@127.0.0.1:{csms.OCPPServerSettings.TCPPort}"),
                      "CSMS",
                      true,
@@ -405,18 +405,18 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             #region The station, to the local controller: with a certificate
 
-            var login        = "cs-" + RandomExtensions.RandomString(8);
-            var description  = $"{chargingStation.Id} --(webSocketMTLS/{DataFormat})--> {localController.OCPP.NodeId}";
+            var login        = User_Id.Parse("cs-" + RandomExtensions.RandomString(8));
+            var description2  = I18NString.Create($"{chargingStation.Id} --(webSocketMTLS/{DataFormat})--> {localController.OCPP.NodeId}");
 
             // A certificate of the test's CA that names the login: the local
             // controller knows the station by nothing else, so the URL names nobody.
-            var certificate  = ClientCertificate(chargingStation, localController, login);
+            var certificate  = ClientCertificate(chargingStation, localController, login.ToString());
 
             BelievesTheTestCA(chargingStation);
 
             Assert.That(
                 chargingStation.Connections.TryAddConnection(
-                     I18NString.Create(description),
+                     description2,
                      URL.Parse($"wss://127.0.0.1:{localController.OCPPServerSettings.TCPPort}"),
                      "LocalController",
                      true,
@@ -429,8 +429,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
                 Is.True, error
             );
 
-            await Until(() => StatusOf(chargingStation, connection!) == ConnectionStatus.Connected, $"'{login}' connecting over webSocketMTLS",                        chargingStation, localController, csms);
-            await Until(() => IsConnectedAt(localController, login),                                $"'{login}' being let in by its certificate",                     chargingStation, localController, csms);
+            await Until(() => StatusOf(chargingStation, connection!) == ConnectionStatus.Connected, $"'{login}' connecting over webSocketMTLS",                         chargingStation, localController, csms);
+            await Until(() => IsConnectedAt(localController, login),                                $"'{login}' being let in by its certificate",                       chargingStation, localController, csms);
 
             // Sent by no node by itself: asked for, as after a reboot.
             _ = chargingStation.SendBootNotifications();
@@ -472,7 +472,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         #region SSH(Authentication)
 
         /// <summary>
-        /// The station dials the local controller's SSH server, and pins the
+        /// The station connects to the local controller's SSH server, and pins the
         /// key the server shows: with its password, with a one-time password
         /// bound to the SSH session, or with its own key.
         /// </summary>
@@ -495,13 +495,13 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             }
 
 
-            var login        = "cs-" + RandomExtensions.RandomString(8);
-            var description  = $"{chargingStation.Id} --(ssh/{Authentication})--> {localController.OCPP.NodeId}";
+            var login        = User_Id.Parse("cs-" + RandomExtensions.RandomString(8));
+            var description  = I18NString.Create($"{chargingStation.Id} --(ssh/{Authentication})--> {localController.OCPP.NodeId}");
             var key          = await chargingStation.SshKey.MakeIfNeeded();
             var error        = "";
             String? credentials = null;
 
-            Assert.That(localController.OCPPOverSSHServed, Is.True, "OCPP over SSH is switched on in the file, and not served.");
+            Assert.That(localController.OCPPOverSSHServed, Is.True, "OCPP-over-SSH is switched on in the file, and not served.");
 
             // Its own key - or a password or the secret of one-time passwords,
             // and its own key then is one the controller does not know.
@@ -526,7 +526,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             Assert.That(
                 chargingStation.Connections.TryAddConnection(
-                     I18NString.Create(description),
+                     description,
                      URL.Parse($"ssh://{login}@127.0.0.1:{localController.SSHPort!.Value.ToUInt16()}"),
                      "LocalController",
                      true,

@@ -179,9 +179,9 @@ namespace cloud.charging.open.TestEnvironment
             Console.WriteLine("                    for pointing at either side on purpose");
             Console.WriteLine();
             Console.WriteLine("How much of a site:");
-            Console.WriteLine("  --no-lc           leave the local controller out; the station dials the CSMS");
+            Console.WriteLine("  --no-lc           leave the local controller out; the station connects to the CSMS");
             Console.WriteLine("  --no-vehicle      leave the vehicle out");
-            Console.WriteLine("  --no-emsp         leave the EMSP out. Nothing here dials it anyway: it is the");
+            Console.WriteLine("  --no-emsp         leave the EMSP out. Nothing here connects to it anyway: it is the");
             Console.WriteLine("                    other end of an OCPI roaming agreement, there for a CPO to");
             Console.WriteLine("                    be pointed at");
             Console.WriteLine("  --no-kiosk        leave the station's display out - it is a second server");
@@ -189,7 +189,7 @@ namespace cloud.charging.open.TestEnvironment
             Console.WriteLine("                    no SDP, no V2G endpoint. The OCPP half still runs");
             Console.WriteLine();
             Console.WriteLine("OCPP:");
-            Console.WriteLine("  --ocpp-tls        encrypt the two OCPP ports and dial them with wss:// under");
+            Console.WriteLine("  --ocpp-tls        encrypt the two OCPP ports and connect to them with wss:// under");
             Console.WriteLine("                    security profile 2. The servers present certificates of this");
             Console.WriteLine("                    environment's OCPP root, and the station and the local controller");
             Console.WriteLine("                    believe them because that root is a TLS root of their own");

@@ -31,8 +31,6 @@ using org.GraphDefined.Vanaheimr.Hermod.HTTP;
 using cloud.charging.open.protocols.WWCP.Node.TestKit;
 using cloud.charging.open.protocols.WWCP.Node.Connections;
 using cloud.charging.open.protocols.OCPP.WebSockets;
-using cloud.charging.open.protocols.OCPPv2_1;
-using cloud.charging.open.protocols.OCPPv2_1.CS;
 
 #endregion
 
@@ -74,7 +72,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             chargingStation    = new ChargingStation.ChargingStation(
                                      DNSClient:        dnsClient,
-                                     HTTPPort:         IPPort.Parse(TestPorts.Free()),
+                                     HTTPPort:         TestPorts.Free(),
                                      NoKiosk:          true,
                                      AccountsPath:     csDirectory.Accounts,
                                      ConfigFile:       csDirectory.ConfigFile,
@@ -89,7 +87,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             csms               = new CSMS.CSMS(
                                      DNSClient:        dnsClient,
-                                     HTTPPort:         IPPort.Parse(TestPorts.Free()),
+                                     HTTPPort:         TestPorts.Free(),
                                      AccountsPath:     csmsDirectory.Accounts,
                                      ConfigFile:       csmsDirectory.ConfigFile,
                                      LogToConsole:     false,
@@ -122,9 +120,11 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         #endregion
 
 
+        #region IsBootNotification(JSON/CBOR)
+
         // An OCPP frame: [2, messageId, action, payload]
         private static Boolean IsBootNotification(JArray? JSON)
-            => JSON is not null && JSON.Count > 2 && JSON[2]?.ToString() == "BootNotification";
+            => JSON?.Count > 2 && JSON[2]?.ToString() == "BootNotification";
 
         private static Boolean IsBootNotification(CBORValue? CBOR)
         {
@@ -135,6 +135,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             return false;
 
         }
+
+        #endregion
 
 
         #region WebSocket     (Authentication, DataFormat)
@@ -200,7 +202,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             #endregion
 
 
-            var login        = "cs-" + RandomExtensions.RandomString(8);
+            var login        = User_Id.Parse("cs-" + RandomExtensions.RandomString(8));
             var description  = I18NString.Create($"{chargingStation.Id} --(webSocket/{Authentication}/{DataFormat})--> {csms.OCPP.NodeId}");
 
             String? credentials;
@@ -337,7 +339,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             Assert.That(bootNotificationReceived, Is.Not.Null, "No BootNotification received at the CSMS!");
 
 
-            //var ocppV2_1 = (chargingStation.OCPPDialling.Node21 as IChargingStationNode)!;
+            //var ocppV2_1 = (chargingStation.OCPPConnecting.Node21 as IChargingStationNode)!;
 
             //var boot1  = await ocppV2_1.SendBootNotification(
             //                       BootReason:        BootReason.PowerUp
@@ -457,7 +459,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             #endregion
 
 
-            var login        = "cs-" + RandomExtensions.RandomString(8);
+            var login        = User_Id.Parse("cs-" + RandomExtensions.RandomString(8));
             var description  = I18NString.Create($"{chargingStation.Id} --(webSocket TLS/{Authentication}/{DataFormat})--> {csms.OCPP.NodeId}");
 
             String? credentials;
@@ -686,12 +688,12 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             #endregion
 
 
-            var login        = "cs-" + RandomExtensions.RandomString(8);
+            var login        = User_Id.Parse("cs-" + RandomExtensions.RandomString(8));
             var description  = I18NString.Create($"{chargingStation.Id} --(webSocket mTLS/{DataFormat})--> {csms.OCPP.NodeId}");
 
             // A certificate of the test's CA that names the login: the CSMS
             // knows the station by nothing else, so the URL names nobody.
-            var certificate  = ClientCertificate(chargingStation, csms, login);
+            var certificate  = ClientCertificate(chargingStation, csms, login.ToString());
 
             BelievesTheTestCA(chargingStation);
 
@@ -767,7 +769,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         #region SSH           (Authentication, DataFormat)
 
         /// <summary>
-        /// The station dials the CSMS's SSH server, and pins the
+        /// The station connects to the CSMS's SSH server, and pins the
         /// key the server shows: with its password, with a one-time password
         /// bound to the SSH session, or with its own key.
         /// </summary>
@@ -831,13 +833,13 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             #endregion
 
 
-            var login        = "cs-" + RandomExtensions.RandomString(8);
+            var login        = User_Id.Parse("cs-" + RandomExtensions.RandomString(8));
             var description  = I18NString.Create($"{chargingStation.Id} --(ssh/{Authentication}/{DataFormat})--> {csms.OCPP.NodeId}");
             var key          = await chargingStation.SshKey.MakeIfNeeded();
             var error        = "";
             String? credentials = null;
 
-            Assert.That(csms.OCPPOverSSHServed, Is.True, "OCPP over SSH is switched on in the file, and not served.");
+            Assert.That(csms.OCPPOverSSHServed, Is.True, "OCPP-over-SSH is switched on in the file, and not served.");
 
             // Its own key - or a password or the secret of one-time passwords,
             // and its own key then is one the controller does not know.
@@ -919,7 +921,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
                 case authPublicKey:
                     Assert.That(
                         csms.TryAddStationSSHKey(
-                            Id:            login,
+                            Login:            login,
                             Line:          SshPublicKey.FromHostKey(key).ToAuthorizedKeyLine(),
                             Label:         "test",
                             GroupId:       null,

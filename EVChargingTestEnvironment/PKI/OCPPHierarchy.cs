@@ -98,7 +98,7 @@ namespace cloud.charging.open.TestEnvironment.PKI
         /// <summary>The server CA's certificate.</summary>
         public X509Certificate          ServerCA          { get; }
 
-        /// <summary>The CA that signs what a charging station and a local controller dial out with.</summary>
+        /// <summary>The CA that signs what a charging station and a local controller connect with.</summary>
         public AsymmetricCipherKeyPair  ClientCAKeyPair   { get; }
 
         /// <summary>The client CA's certificate.</summary>
@@ -328,7 +328,7 @@ namespace cloud.charging.open.TestEnvironment.PKI
 
         /// <summary>
         /// Sign a client's signing request - what a charging station or a local
-        /// controller dials out with under OCPP security profile 3.
+        /// controller connects with under OCPP security profile 3.
         /// </summary>
         public String SignClient(String CSRPEM)
 

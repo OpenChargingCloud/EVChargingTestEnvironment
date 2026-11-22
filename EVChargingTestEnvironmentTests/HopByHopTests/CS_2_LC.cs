@@ -81,7 +81,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             chargingStation  = new ChargingStation.ChargingStation(
                                    DNSClient:        dnsClient,
-                                   HTTPPort:         IPPort.Parse(TestPorts.Free()),
+                                   HTTPPort:         TestPorts.Free(),
                                    NoKiosk:          true,
                                    AccountsPath:     csDirectory.Accounts,
                                    ConfigFile:       csDirectory.ConfigFile,
@@ -96,7 +96,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             localController  = new LocalController.LocalController(
                                    DNSClient:        dnsClient,
-                                   HTTPPort:         IPPort.Parse(TestPorts.Free()),
+                                   HTTPPort:         TestPorts.Free(),
                                    AccountsPath:     lcDirectory.Accounts,
                                    ConfigFile:       lcDirectory.ConfigFile,
                                    LogToConsole:     false,
@@ -132,7 +132,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         #region WebSocket(Transport, Authentication)
 
         /// <summary>
-        /// The station dials the local controller and is let in. Whether it is accepted is
+        /// The station connects to the local controller and is let in. Whether it is accepted is
         /// for the CSMS above the local controller to say, and there is none here: so it
         /// is the line, at both its ends, that is tested.
         /// </summary>
@@ -157,8 +157,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             }
 
 
-            var login        = "cs-" + RandomExtensions.RandomString(8);
-            var description  = $"{chargingStation.Id} --({Transport}/{Authentication})--> {localController.OCPP.NodeId}";
+            var login        = User_Id.Parse("cs-" + RandomExtensions.RandomString(8));
+            var description  = I18NString.Create($"{chargingStation.Id} --({Transport}/{Authentication})--> {localController.OCPP.NodeId}");
 
             var credentials  = Credentials(chargingStation, localController, login, Authentication, description);
 
@@ -166,7 +166,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             Assert.That(
                 chargingStation.Connections.TryAddConnection(
-                     I18NString.Create(description),
+                     description,
                      URL.Parse($"{Transport}://{login}@127.0.0.1:{localController.OCPPServerSettings.TCPPort}"),
                      "LocalController",
                      true,
@@ -213,7 +213,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         #region SSH(Authentication)
 
         /// <summary>
-        /// The station dials the local controller's SSH server, and pins the
+        /// The station connects to the local controller's SSH server, and pins the
         /// key the server shows: with its password, with a one-time password
         /// bound to the SSH session, or with its own key.
         /// </summary>
@@ -236,13 +236,13 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             }
 
 
-            var login        = "cs-" + RandomExtensions.RandomString(8);
-            var description  = $"{chargingStation.Id} --(ssh/{Authentication})--> {localController.OCPP.NodeId}";
+            var login        = User_Id.Parse("cs-" + RandomExtensions.RandomString(8));
+            var description  = I18NString.Create($"{chargingStation.Id} --(ssh/{Authentication})--> {localController.OCPP.NodeId}");
             var key          = await chargingStation.SshKey.MakeIfNeeded();
             var error        = "";
             String? credentials = null;
 
-            Assert.That(localController.OCPPOverSSHServed, Is.True, "OCPP over SSH is switched on in the file, and not served.");
+            Assert.That(localController.OCPPOverSSHServed, Is.True, "OCPP-over-SSH is switched on in the file, and not served.");
 
             // Its own key - or a password or the secret of one-time passwords,
             // and its own key then is one the controller does not know.
@@ -267,7 +267,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             Assert.That(
                 chargingStation.Connections.TryAddConnection(
-                     I18NString.Create(description),
+                     description,
                      URL.Parse($"ssh://{login}@127.0.0.1:{localController.SSHPort!.Value.ToUInt16()}"),
                      "LocalController",
                      true,

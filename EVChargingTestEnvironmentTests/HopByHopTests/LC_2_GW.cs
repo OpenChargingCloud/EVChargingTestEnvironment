@@ -81,7 +81,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             localController  = new LocalController.LocalController(
                                    DNSClient:        dnsClient,
-                                   HTTPPort:         IPPort.Parse(TestPorts.Free()),
+                                   HTTPPort:         TestPorts.Free(),
                                    AccountsPath:     lcDirectory.Accounts,
                                    ConfigFile:       lcDirectory.ConfigFile,
                                    LogToConsole:     false,
@@ -95,7 +95,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             gateway          = new Gateway.Gateway(
                                    DNSClient:        dnsClient,
-                                   HTTPPort:         IPPort.Parse(TestPorts.Free()),
+                                   HTTPPort:         TestPorts.Free(),
                                    AccountsPath:     gwDirectory.Accounts,
                                    ConfigFile:       gwDirectory.ConfigFile,
                                    LogToConsole:     false,
@@ -130,7 +130,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         #region WebSocket(Transport, Authentication)
 
         /// <summary>
-        /// The local controller dials the gateway and is let in. Whether it is accepted is
+        /// The local controller connects to the gateway and is let in. Whether it is accepted is
         /// for the CSMS above the gateway to say, and there is none here: so it
         /// is the line, at both its ends, that is tested.
         /// </summary>
@@ -152,8 +152,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             }
 
 
-            var login        = localController.Node.Id.ToString();
-            var description  = $"{localController.OCPP.NodeId} --({Transport}/{Authentication})--> {gateway.OCPP.NodeId}";
+            var login        = User_Id.Parse(localController.Node.Id.ToString());
+            var description  = I18NString.Create($"{localController.OCPP.NodeId} --({Transport}/{Authentication})--> {gateway.OCPP.NodeId}");
 
             var credentials  = Credentials(localController, gateway, login, Authentication, description);
 
@@ -161,7 +161,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             Assert.That(
                 localController.Connections.TryAddConnection(
-                     I18NString.Create(description),
+                     description,
                      URL.Parse($"{Transport}://{login}@127.0.0.1:{gateway.OCPPServerSettings.TCPPort}"),
                      "Gateway",
                      true,

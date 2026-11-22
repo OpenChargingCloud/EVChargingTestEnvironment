@@ -81,7 +81,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             gateway          = new Gateway.Gateway(
                                    DNSClient:        dnsClient,
-                                   HTTPPort:         IPPort.Parse(TestPorts.Free()),
+                                   HTTPPort:         TestPorts.Free(),
                                    AccountsPath:     gwDirectory.Accounts,
                                    ConfigFile:       gwDirectory.ConfigFile,
                                    LogToConsole:     false,
@@ -95,7 +95,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             csms             = new CSMS.CSMS(
                                    DNSClient:        dnsClient,
-                                   HTTPPort:         IPPort.Parse(TestPorts.Free()),
+                                   HTTPPort:         TestPorts.Free(),
                                    AccountsPath:     csmsDirectory.Accounts,
                                    ConfigFile:       csmsDirectory.ConfigFile,
                                    LogToConsole:     false,
@@ -147,8 +147,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             }
 
 
-            var login        = "gw-" + RandomExtensions.RandomString(8);
-            var description  = $"{gateway.OCPP.NodeId} --({Transport}/{Authentication})--> {csms.OCPP.NodeId}";
+            var login        = User_Id.Parse("gw-" + RandomExtensions.RandomString(8));
+            var description  = I18NString.Create($"{gateway.OCPP.NodeId} --({Transport}/{Authentication})--> {csms.OCPP.NodeId}");
 
             var credentials  = Credentials(gateway, csms, login, Authentication, description);
 
@@ -156,7 +156,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             Assert.That(
                 gateway.Connections.TryAddConnection(
-                     I18NString.Create(description),
+                     description,
                      URL.Parse($"{Transport}://{login}@127.0.0.1:{csms.OCPPServerSettings.TCPPort}"),
                      "CSMS",
                      true,

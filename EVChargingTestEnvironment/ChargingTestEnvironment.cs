@@ -67,7 +67,7 @@ namespace cloud.charging.open.TestEnvironment
     /// between five.
     /// </para>
     /// <para>
-    /// The EMSP is the one of the five that nothing else here dials: it is the
+    /// The EMSP is the one of the five that nothing else here connects to: it is the
     /// other end of an OCPI roaming agreement, and there is no CPO speaking
     /// OCPI on this bench yet. It is built and started all the same - its web
     /// interface, its OCPI endpoints below <c>/ext</c>, its log on the same
@@ -80,9 +80,9 @@ namespace cloud.charging.open.TestEnvironment
     /// <list type="number">
     ///   <item>The certificates, before anything else exists. They decide what the station can listen with and what the vehicle may believe.</item>
     ///   <item>The configuration files, because every one of these five reads its own at construction and several of them open ports according to it.</item>
-    ///   <item>The five objects, from the top down: the CSMS knows nothing of what is below it, and everything below has to be told where to dial. The EMSP stands beside the CSMS and dials nothing.</item>
-    ///   <item>The certificates and logins handed out, which needs the objects (their key stores are theirs) and has to happen before they start (starting is when they dial).</item>
-    ///   <item>Start, from the top down again, so that nothing dials a port that is not open yet.</item>
+    ///   <item>The five objects, from the top down: the CSMS knows nothing of what is below it, and everything below has to be told where to connect to. The EMSP stands beside the CSMS and connects to nothing.</item>
+    ///   <item>The certificates and logins handed out, which needs the objects (their key stores are theirs) and has to happen before they start (starting is when they connect).</item>
+    ///   <item>Start, from the top down again, so that nothing connects to a port that is not open yet.</item>
     /// </list>
     /// </remarks>
     public sealed partial class ChargingTestEnvironment : IAsyncDisposable
@@ -377,7 +377,7 @@ namespace cloud.charging.open.TestEnvironment
                              );
 
             // Beside the CSMS rather than below it: an EMSP is the other end
-            // of a roaming agreement, and nothing on this bench dials it yet.
+            // of a roaming agreement, and nothing on this bench connects to it yet.
             // It is told nothing in WriteConfigurations for the same reason -
             // who it is (DE-GDF unless its file says otherwise) and which OCPI
             // versions it offers are in its own file, and its partners are in
@@ -535,17 +535,17 @@ namespace cloud.charging.open.TestEnvironment
             if (started)
                 return;
 
-            #region The certificates and logins, before anything dials
+            #region The certificates and logins, before anything connects
 
             // Between construction and starting, and it has to be exactly
             // there: the key stores these are written into belong to the
             // components and do not exist before they are built, and starting
-            // is the moment each of them dials out with whatever it has.
+            // is the moment each of them connects with whatever it has.
             await HandOutCertificates();
 
             #endregion
 
-            #region Started from the top down, so nothing dials a closed port
+            #region Started from the top down, so nothing connects to a closed port
 
             if (sharedServer is not null)
             {
@@ -558,7 +558,7 @@ namespace cloud.charging.open.TestEnvironment
             await CSMS.Start();
 
             // Right after the CSMS, and nothing below waits for it: nothing
-            // dials it. Second rather than first so that, where the five share
+            // connects to it. Second rather than first so that, where the five share
             // their accounts, it is still the CSMS that makes them at a first
             // start and is named for it.
             if (EMSP is not null)
@@ -877,7 +877,7 @@ namespace cloud.charging.open.TestEnvironment
 
         /// <summary>
         /// What each of the four that talk to each other is told in writing,
-        /// before it reads it. The EMSP is told nothing: nothing here dials it.
+        /// before it reads it. The EMSP is told nothing: nothing here connects to it.
         /// </summary>
         /// <remarks>
         /// <para>
@@ -898,7 +898,7 @@ namespace cloud.charging.open.TestEnvironment
                                                 TestPKI                 Certificates)
         {
 
-            #region The CSMS: the port the stations and controllers dial
+            #region The CSMS: the port the stations and controllers connect to
 
             var csmsFile = new WWCPConfigFile(
                                Path.Combine(Options.CSMSDirectory, WWCPConfigFile.DefaultFileName)
@@ -916,7 +916,7 @@ namespace cloud.charging.open.TestEnvironment
                          // this is the field that decides whether the port is
                          // encrypted at all: a way over TLS in it turns TLS
                          // on. A port that is encrypted while the things below
-                         // it dial ws:// answers them with a corrupted frame
+                         // it connect over ws:// answers them with a corrupted frame
                          // and no explanation, which is what this environment
                          // did until 2026-09-19.
                          new JProperty("clientAuthentication", new JArray(Options.OCPPClientAuthentication))
@@ -979,11 +979,11 @@ namespace cloud.charging.open.TestEnvironment
                              // Where it reports to is not said here any more:
                              // the line up is a connection of the controller's
                              // store, given to it with its password once the
-                             // passwords are made (DialTheCSMS). Its scheme is
+                             // passwords are made (ConnectToTheCSMS). Its scheme is
                              // the same decision as the port above, and has to
-                             // be: a controller that dials ws:// at a port
+                             // be: a controller that connects over ws:// to a port
                              // listening for wss:// is answered with a
-                             // corrupted frame, and one that dials wss:// at a
+                             // corrupted frame, and one that connects over wss:// to a
                              // plain port waits for a handshake nobody is going
                              // to make.
                              new JProperty("nextHopNodeId",    "CSMS")

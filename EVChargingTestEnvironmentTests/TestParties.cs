@@ -44,7 +44,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
     internal static class TestParties
     {
 
-        #region NewCPO(Directory, CountryCode, PartyId, Name)
+        #region NewCPO(Directory, CountryCode, PartyId, Name, Versions)
 
         /// <summary>
         /// A CSMS with an OCPI identity, built and not started.
@@ -56,10 +56,12 @@ namespace cloud.charging.open.TestEnvironment.Tests
         /// because nothing here is about OCPP and a second socket per test is
         /// a second thing to go wrong.
         /// </remarks>
-        public static CSMS.CSMS NewCPO(String  Directory,
-                                       String  CountryCode   = "DE",
-                                       String  PartyId       = "GEF",
-                                       String  Name          = "GraphDefined CPO")
+        /// <param name="Versions">The OCPI versions it offers; "2.2.1" alone by default.</param>
+        public static CSMS.CSMS NewCPO(String     Directory,
+                                       String     CountryCode   = "DE",
+                                       String     PartyId       = "GEF",
+                                       String     Name          = "GraphDefined CPO",
+                                       String[]?  Versions      = null)
         {
 
             System.IO.Directory.CreateDirectory(Directory);
@@ -77,7 +79,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
                         new JProperty("countryCode",     CountryCode),
                         new JProperty("partyId",         PartyId),
                         new JProperty("name",            Name),
-                        new JProperty("versions",        new JArray("2.2.1")),
+                        new JProperty("versions",        new JArray(Versions ?? ["2.2.1"])),
 
                         // Its partner is on this machine, which a CSMS does
                         // not call unless told so (CSMS 5fe4e43).
@@ -87,7 +89,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
             );
 
             return new CSMS.CSMS(
-                       HTTPPort:         IPPort.Parse(FreePort()),
+                       HTTPPort:         FreePort(),
                        AccountsPath:     Path.Combine(Directory, "accounts"),
                        ConfigFile:       new WWCPConfigFile(configFile),
                        LogToConsole:     false,
@@ -98,15 +100,17 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
         #endregion
 
-        #region NewEMSP(Directory, CountryCode, PartyId, Name)
+        #region NewEMSP(Directory, CountryCode, PartyId, Name, Versions)
 
         /// <summary>
         /// An EMSP with an OCPI identity, built and not started.
         /// </summary>
-        public static EMSP.EMSP NewEMSP(String  Directory,
-                                        String  CountryCode   = "DE",
-                                        String  PartyId       = "GDF",
-                                        String  Name          = "GraphDefined EMSP")
+        /// <param name="Versions">The OCPI versions it offers; "2.2.1" alone by default.</param>
+        public static EMSP.EMSP NewEMSP(String     Directory,
+                                        String     CountryCode   = "DE",
+                                        String     PartyId       = "GDF",
+                                        String     Name          = "GraphDefined EMSP",
+                                        String[]?  Versions      = null)
         {
 
             System.IO.Directory.CreateDirectory(Directory);
@@ -121,13 +125,13 @@ namespace cloud.charging.open.TestEnvironment.Tests
                         new JProperty("countryCode",  CountryCode),
                         new JProperty("partyId",      PartyId),
                         new JProperty("name",         Name),
-                        new JProperty("versions",     new JArray("2.2.1"))
+                        new JProperty("versions",     new JArray(Versions ?? ["2.2.1"]))
                     ))
                 ).ToString()
             );
 
             return new EMSP.EMSP(
-                       HTTPPort:         IPPort.Parse(FreePort()),
+                       HTTPPort:         FreePort(),
                        AccountsPath:     Path.Combine(Directory, "accounts"),
                        ConfigFile:       new WWCPConfigFile(configFile),
                        LogToConsole:     false,
@@ -166,7 +170,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
         /// <summary>
         /// A TCP port nobody was listening on a moment ago.
         /// </summary>
-        public static UInt16 FreePort()
+        public static IPPort FreePort()
         {
 
             var listener = new TcpListener(System.Net.IPAddress.Loopback, 0);
@@ -175,7 +179,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             try
             {
-                return (UInt16) ((IPEndPoint) listener.LocalEndpoint).Port;
+                return IPPort.Parse((UInt16) ((IPEndPoint) listener.LocalEndpoint).Port);
             }
             finally
             {

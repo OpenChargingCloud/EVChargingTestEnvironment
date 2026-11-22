@@ -81,7 +81,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             localController  = new LocalController.LocalController(
                                    DNSClient:        dnsClient,
-                                   HTTPPort:         IPPort.Parse(TestPorts.Free()),
+                                   HTTPPort:         TestPorts.Free(),
                                    AccountsPath:     lcDirectory.Accounts,
                                    ConfigFile:       lcDirectory.ConfigFile,
                                    LogToConsole:     false,
@@ -95,7 +95,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             csms             = new CSMS.CSMS(
                                    DNSClient:        dnsClient,
-                                   HTTPPort:         IPPort.Parse(TestPorts.Free()),
+                                   HTTPPort:         TestPorts.Free(),
                                    AccountsPath:     csmsDirectory.Accounts,
                                    ConfigFile:       csmsDirectory.ConfigFile,
                                    LogToConsole:     false,
@@ -130,7 +130,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         #region WebSocket(Transport, Authentication)
 
         /// <summary>
-        /// The local controller dials the CSMS, under its own name: what it
+        /// The local controller connects to the CSMS, under its own name: what it
         /// sends in the overlay network comes from it. That it reports
         /// upwards at all its file says, in the section "csms".
         /// </summary>
@@ -152,8 +152,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             }
 
 
-            var login        = localController.Node.Id.ToString();
-            var description  = $"{localController.OCPP.NodeId} --({Transport}/{Authentication})--> {csms.OCPP.NodeId}";
+            var login        = User_Id.Parse(localController.Node.Id.ToString());
+            var description  = I18NString.Create($"{localController.OCPP.NodeId} --({Transport}/{Authentication})--> {csms.OCPP.NodeId}");
 
             var credentials  = Credentials(localController, csms, login, Authentication, description);
 
@@ -165,7 +165,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             Assert.That(
                 localController.Connections.TryAddConnection(
-                     I18NString.Create(description),
+                     description,
                      URL.Parse($"{Transport}://{login}@127.0.0.1:{csms.OCPPServerSettings.TCPPort}"),
                      "CSMS",
                      true,

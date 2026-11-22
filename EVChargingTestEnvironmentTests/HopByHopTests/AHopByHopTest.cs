@@ -57,9 +57,9 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         #region OverTLS / OverSSH
 
         /// <summary>
-        /// Whether the running test dials over wss://: it is one named
+        /// Whether the running test connects over wss://: it is one named
         /// "WebSocketTLS" or "WebSocketMTLS", or one of its arguments says
-        /// "wss". Known in [SetUp] already, so the node that is dialled gets
+        /// "wss". Known in [SetUp] already, so the node that is connected to gets
         /// a certificate before it starts.
         /// </summary>
         protected static Boolean OverTLS
@@ -68,20 +68,30 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
                TestContext.CurrentContext.Test.Arguments.Any(argument => argument as String == "wss");
 
         /// <summary>
-        /// Whether the running test dials over wss:// and signs in with a
+        /// Whether the running test connects over wss:// and signs in with a
         /// client certificate: it is one named "WebSocketMTLS". The node that
-        /// is dialled then lets in nothing else.
+        /// is connected to then lets in nothing else.
         /// </summary>
         protected static Boolean OverMTLS
 
             => TestContext.CurrentContext.Test.MethodName == "WebSocketMTLS";
 
         /// <summary>
-        /// Whether the running test dials over ssh://: it is one named "SSH".
+        /// Whether the running test connects via ssh://: it is one named "SSH",
+        /// or one of SFTP.
         /// </summary>
         protected static Boolean OverSSH
 
-            => TestContext.CurrentContext.Test.MethodName == "SSH";
+            => TestContext.CurrentContext.Test.MethodName == "SSH" || OverSFTP;
+
+        /// <summary>
+        /// Whether the running test moves files over SFTP, beside OCPP over
+        /// SSH: its name begins with "SFTP_". The SSH server of the node that
+        /// is connected to serves SFTP then.
+        /// </summary>
+        protected static Boolean OverSFTP
+
+            => TestContext.CurrentContext.Test.MethodName?.StartsWith("SFTP_", StringComparison.Ordinal) == true;
 
         #endregion
 
@@ -102,14 +112,14 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         #region StationServer(ClientAuthentication)
 
         /// <summary>
-        /// The "webSocketServer" section of a node that other nodes dial: its
+        /// The "webSocketServer" section of a node that other nodes connect to: its
         /// station server switched on, on 127.0.0.1 and a port of its own,
         /// letting in what signs in in the given ways - HTTP authentication
         /// without TLS where none are given - and speaking OCPP 2.1 as JSON
         /// and as CBOR.
         /// </summary>
         /// <remarks>
-        /// Off where the file says nothing, so a node that is to be dialled
+        /// Off where the file says nothing, so a node that is to be connected to
         /// needs it in its file.
         /// </remarks>
         /// <param name="ClientAuthentication">How a client may sign in: "httpAuthWithoutTLS", "httpAuthOverTLS", "tlsClientCertificate".</param>
@@ -118,7 +128,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             => new ("webSocketServer", new JObject(
                    new JProperty("enabled",               true),
                    new JProperty("address",               "127.0.0.1"),
-                   new JProperty("port",                  TestPorts.Free()),
+                   new JProperty("port",                  TestPorts.Free().ToUInt16()),
                    new JProperty("clientAuthentication",  new JArray(ClientAuthentication.Length > 0 ? ClientAuthentication : [ "httpAuthWithoutTLS" ])),
                    new JProperty("subprotocols",          new JArray("ocpp2.1", "ocpp2.0.1", "ocpp2.1cbor")),
                    new JProperty("ssh",                   new JObject(
@@ -133,7 +143,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         /// <summary>
         /// The "csms" section of a local controller that reports upwards: its
         /// lines up are the connections of its store, but only where this
-        /// says that it reports to anything at all - and a CSMS that dials it
+        /// says that it reports to anything at all - and a CSMS that connects to it
         /// is let in only then.
         /// </summary>
         protected static JProperty ReportsUpwards()
@@ -148,23 +158,32 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
         /// <summary>
         /// The "ssh" section of a node with an SSH server of its own, on a
-        /// port of its own: where its station server takes OCPP over SSH.
+        /// port of its own: where its station server takes OCPP-over-SSH -
+        /// and, for a test of SFTP, files over SFTP.
         /// </summary>
         protected static JProperty SSHServer()
+        {
 
-            => new ("ssh", new JObject(
-                   new JProperty("enabled",  true),
-                   new JProperty("port",     TestPorts.Free())
-               ));
+            var ssh = new JObject(
+                          new JProperty("enabled",  true),
+                          new JProperty("port",     TestPorts.Free().ToUInt16())
+                      );
+
+            if (OverSFTP)
+                ssh.Add("sftp", true);
+
+            return new ("ssh", ssh);
+
+        }
 
         #endregion
 
         #region NewServedNodeDirectory(Purpose, [ClientAuthentication,] params Sections)
 
         /// <summary>
-        /// The directory of the node that is dialled: its station server
+        /// The directory of the node that is connected to: its station server
         /// switched on - over TLS, with a certificate of the test's CA, where
-        /// the test dials over wss://, and with an SSH server where it dials
+        /// the test connects over wss://, and with an SSH server where it connects
         /// over ssh://.
         /// </summary>
         /// <param name="Purpose">What the directory is for, "cs" or "csms", part of its name.</param>
@@ -183,8 +202,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
                );
 
         /// <summary>
-        /// The directory of a node that is dialled, letting in what signs in in
-        /// the given way: a node further up a chain, say, that is dialled with
+        /// The directory of a node that is connected to, letting in what signs in in
+        /// the given way: a node further up a chain, say, that is connected to with
         /// a password while the node below it lets in client certificates.
         /// </summary>
         /// <param name="Purpose">What the directory is for, "cs" or "csms", part of its name.</param>
@@ -213,7 +232,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
         #endregion
 
-        #region (private) TestCA / ACertificateOfTheTestCA(Directory)
+        #region (private) TestCA / ACertificateOfTheTestCA(Directory, Listener = "ocpp")
 
         /// <summary>
         /// A CA of the test's own. Its name is its own per test, as Windows
@@ -247,19 +266,23 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         /// <summary>
         /// A key of the node's own and a certificate of the test's CA for it,
         /// for 127.0.0.1, in the store beside its configuration file before
-        /// it starts: this is what makes its station port speak TLS.
+        /// it starts: this is what makes its station port speak TLS - or the
+        /// port of the given listener, as the WebSocket port of OCPI of an EMSP.
         /// </summary>
         /// <param name="Directory">The directory of the node's configuration file.</param>
-        private void ACertificateOfTheTestCA(String Directory)
+        /// <param name="Listener">The listener the certificate is told: the station port's, "ocpp", where none is given.</param>
+        protected void ACertificateOfTheTestCA(String   Directory,
+                                               String?  Listener   = null)
         {
 
-            var ca     = TestCA;
+            var ca        = TestCA;
+            var listener  = Listener ?? OCPPServingNode.StationListener;
 
             var store  = new CertificateStore(
                              Path.Combine(Directory, CertificatesConfiguration.DefaultDirectory),
                              new cloud.charging.open.protocols.WWCP.Node.Logging.EventLog(),
                              NodeName:      "Node",
-                             Listeners:     [ OCPPServingNode.StationListener ],
+                             Listeners:     [ listener ],
                              RequestKinds:  [ CertificateKind.TLSServerIdentity ]
                          );
 
@@ -269,7 +292,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
                                                "CN=127.0.0.1",
                                                null,
                                                new CertificateRequestAsks(ReachableAs: [ "127.0.0.1" ]),
-                                               [ OCPPServingNode.StationListener ],
+                                               [ listener ],
                                                null,
                                                out var request,
                                                out var error,
@@ -294,11 +317,11 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         #region BelievesTheTestCA(Node)
 
         /// <summary>
-        /// Where the test dials over wss://, the node that dials believes the
+        /// Where the test connects over wss://, the node that connects believes the
         /// test's CA: a TLS root of its own store, kept for what it judges the
         /// servers of its connections by - the machine has never heard of it.
         /// </summary>
-        /// <param name="Node">The node that dials.</param>
+        /// <param name="Node">The node that connects.</param>
         protected void BelievesTheTestCA(WWCPNode Node)
         {
 
@@ -318,38 +341,105 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
         #endregion
 
-        #region ClientCertificate(Dialler, Served, Login)
+        #region WebSocketLoginsOf(Served) / ClientTrustOf(Served)
 
         /// <summary>
-        /// What the node that dials signs in with over mutual TLS: a key of
-        /// its own, and for it a certificate of the test's CA that names the
-        /// login - that name is who the node it dials takes it for. The node
-        /// it dials believes what the test's CA vouches for.
+        /// The WebSocket logins of the node that is connected to: of its station
+        /// port, or of the WebSocket port of OCPI of an EMSP.
         /// </summary>
-        /// <returns>The certificate of the dialling node's store, to name as the connection's.</returns>
-        protected String ClientCertificate(WWCPNode         Dialler,
-                                           OCPPServingNode  Served,
-                                           String           Login)
+        protected static WebSocketLogins WebSocketLoginsOf(WWCPNode Served)
+
+            => Served switch {
+                   OCPPServingNode  node  => node.WebSocketLogins,
+                   EMSP.EMSP        emsp  => emsp.WebSocketLogins,
+                   _                      => throw new ArgumentException($"'{Served.NodeNoun}' has no WebSocket logins these tests know.", nameof(Served))
+               };
+
+        /// <summary>
+        /// Which chains the node that is connected to accepts a client
+        /// certificate of.
+        /// </summary>
+        protected static ClientTrustStore ClientTrustOf(WWCPNode Served)
+
+            => Served switch {
+                   OCPPServingNode  node  => node.ClientTrust,
+                   EMSP.EMSP        emsp  => emsp.ClientTrust,
+                   _                      => throw new ArgumentException($"'{Served.NodeNoun}' accepts no client certificates these tests know.", nameof(Served))
+               };
+
+        #endregion
+
+        #region ClientCertificate(Client, Served, Login)
+
+        /// <summary>
+        /// What the node that connects signs in with over mutual TLS: a key of
+        /// its own, and for it a certificate of the test's CA that names the
+        /// login - that name is who the node it connects to takes it for. The node
+        /// it connects to believes what the test's CA vouches for.
+        /// </summary>
+        /// <returns>The certificate of the connecting node's store, to name as the connection's.</returns>
+        protected String ClientCertificate(WWCPNode  Client,
+                                           WWCPNode  Served,
+                                           String    Subject)
         {
 
-            Assert.That(Dialler.Certificates.TryCreateRequest(CertificateKind.TLSIdentity, Login, null, null, null, null,
-                                                              out var request, out var error, out _),
+            String? error;
+
+            // A node that makes no key for who it is - a CSMS - is given one,
+            // as its operator would give it one: a key, and a certificate of
+            // the test's CA for it, imported together.
+            if (!Client.Certificates.RequestKinds.Contains(CertificateKind.TLSIdentity))
+            {
+
+                using var ownKey         = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+                var ownRequest           = new CertificateRequest($"CN={Subject}", ownKey, HashAlgorithmName.SHA256);
+
+                ownRequest.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, true));
+                ownRequest.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature, true));
+                ownRequest.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension([ new Oid("1.3.6.1.5.5.7.3.2") ], false));   // TLS client
+
+                using var ownCertificate = ownRequest.Create(TestCA.SubjectName,
+                                                          X509SignatureGenerator.CreateForECDsa(testCAKey!),
+                                                          DateTimeOffset.UtcNow.AddDays(-1),
+                                                          DateTimeOffset.UtcNow.AddDays(30),
+                                                          Guid.NewGuid().ToByteArray());
+
+                using var withKey        = ownCertificate.CopyWithPrivateKey(ownKey);
+
+                Assert.That(Client.Certificates.Import(new X509Certificate2Collection { withKey, TestCA }.Export(X509ContentType.Pkcs12)!,
+                                                        CertificateKind.TLSIdentity,
+                                                        null,
+                                                        Subject,
+                                                        out var imported,
+                                                        out error),
+                            Is.True, error);
+
+                Assert.That(ClientTrustOf(Served).TryAdd(TestCA.ExportCertificatePem(), "The CA of the test", out _, out _, out error),
+                            Is.True, error);
+
+                return imported!.Id;
+
+            }
+
+            Assert.That(Client.Certificates.TryCreateRequest(CertificateKind.TLSIdentity, Subject, null, null, null, null,
+                                                              out var signingRequest, out error, out _),
                         Is.True, error);
 
-            using var certificate = CertificateRequest.LoadSigningRequestPem(request!.CSR, HashAlgorithmName.SHA256, CertificateRequestLoadOptions.UnsafeLoadCertificateExtensions).
+            using var certificate = CertificateRequest.LoadSigningRequestPem(signingRequest!.CSR, HashAlgorithmName.SHA256, CertificateRequestLoadOptions.UnsafeLoadCertificateExtensions).
                                         Create(TestCA.SubjectName,
                                                X509SignatureGenerator.CreateForECDsa(testCAKey!),
                                                DateTimeOffset.UtcNow.AddDays(-1),
                                                DateTimeOffset.UtcNow.AddDays(30),
                                                Guid.NewGuid().ToByteArray());
 
-            Assert.That(Dialler.Certificates.TryAnswerRequest(certificate.ExportCertificatePem() + Environment.NewLine + TestCA.ExportCertificatePem(),
+            Assert.That(Client.Certificates.TryAnswerRequest(certificate.ExportCertificatePem() + Environment.NewLine + TestCA.ExportCertificatePem(),
                                                               out var identity, out _, out _, out error, out _),
                         Is.True, error);
 
             Assert.That(identity, Is.Not.Null, "The signed certificate could not be put together with its key.");
 
-            Assert.That(Served.ClientTrust.TryAdd(TestCA.ExportCertificatePem(), "The CA of the test", out _, out _, out error),
+            Assert.That(ClientTrustOf(Served).TryAdd(TestCA.ExportCertificatePem(), "The CA of the test", out _, out _, out error),
                         Is.True, error);
 
             return identity!.Id;
@@ -358,19 +448,19 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
         #endregion
 
-        #region Credentials(Dialler, Served, Login, Authentication, Description)
+        #region Credentials(Client, Served, Login, Authentication, Description)
 
         /// <summary>
-        /// What the node that dials signs in with, and the login the node it
-        /// dials lets it in with: a password, or the secret of one-time
+        /// What the node that connects signs in with, and the login the node it
+        /// connects to lets it in with: a password, or the secret of one-time
         /// passwords.
         /// </summary>
-        /// <returns>The credentials of the dialling node's store.</returns>
-        protected static String Credentials(WWCPNode         Dialler,
-                                            OCPPServingNode  Served,
-                                            String           Login,
-                                            String           Authentication,
-                                            String           Description)
+        /// <returns>The credentials of the connecting node's store.</returns>
+        protected static String Credentials(WWCPNode    Client,
+                                            WWCPNode    Served,
+                                            User_Id     Login,
+                                            String      Authentication,
+                                            I18NString  Description)
         {
 
             String? credentials;
@@ -383,8 +473,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
                     var password = RandomExtensions.RandomString(32);
 
-                    Assert.That(Served. WebSocketLogins.TrySetPasswordAuthentication(Login, password, null, I18NString.Create("tests"), out error),                             Is.True, error);
-                    Assert.That(Dialler.Connections.TryAddPasswordAuthentication(Login, password, I18NString.Create(Description), out credentials, out error),       Is.True, error);
+                    Assert.That(WebSocketLoginsOf(Served).TrySetPasswordAuthentication(Login, password, null, Description, out error),                           Is.True, error);
+                    Assert.That(Client.Connections.    TryAddPasswordAuthentication(Login, password,       Description, out credentials, out error),       Is.True, error);
 
                     break;
 
@@ -392,8 +482,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
                     var sharedSecret = RandomExtensions.RandomString(16);
 
-                    Assert.That(Served. WebSocketLogins.TrySetTOTPAuthentication(Login, sharedSecret, null, null, null, null, null, I18NString.Create("tests"), out error), Is.True, error);
-                    Assert.That(Dialler.Connections.TryAddTOTPAuthentication(Login, sharedSecret, I18NString.Create(Description), out credentials, out error),        Is.True, error);
+                    Assert.That(WebSocketLoginsOf(Served).TrySetTOTPAuthentication(Login, sharedSecret, null, null, null, null, null, Description, out error), Is.True, error);
+                    Assert.That(Client.Connections.    TryAddTOTPAuthentication(Login, sharedSecret, Description, out credentials, out error),        Is.True, error);
 
                     break;
 
@@ -443,7 +533,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
                    new[] { "", "What was said:" }.
                        Concat(Nodes.OfType<WWCPNode>().SelectMany(node =>
                                   node.Log.Recent(100).Select(entry => $"  {node.NodeNoun,-16} {entry.Timestamp:HH:mm:ss.fff} [{entry.LevelName}] {entry.Message}").
-                                  Concat(node.DialledConnections.Select(said => $"  {node.NodeNoun,-16} dialled {said.Key}: {said.Value}"))))
+                                  Concat(node.OutboundConnections.Select(said => $"  {node.NodeNoun,-16} connection {said.Key}: {said.Value}"))))
                );
 
         #endregion
@@ -468,15 +558,25 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             => Node.RegistrationJSON()["2.1"]?["state"]?.Value<String>() ?? "";
 
         /// <summary>
-        /// Whether the station server of the given node has someone of the
-        /// given login connected, over a WebSocket or over SSH.
+        /// Whether the station server of the given node - with the servers of
+        /// OCPI of a CSMS behind it, or the servers of OCPI of an EMSP - has
+        /// someone of the given login connected, over a WebSocket or over SSH.
         /// </summary>
-        protected static Boolean IsConnectedAt(OCPPServingNode  Server,
-                                               String           Login)
+        protected static Boolean IsConnectedAt(WWCPNode  Server,
+                                               User_Id   Login)
 
-            => (Server.StationServer?.   ConnectedNetworkingNodeIds ?? []).
-                   Concat(Server.StationSSHServer?.ConnectedNetworkingNodeIds ?? []).
-                   Any(id => id.ToString() == Login);
+            => (Server switch {
+                    CSMS.CSMS        csms  => (csms.StationServer?.ConnectedNetworkingNodeIds ?? []).
+                                                  Concat(csms.StationSSHServer?.ConnectedNetworkingNodeIds ?? []).
+                                                  Concat(csms.OCPIServers.   SelectMany(server => server.ConnectedNetworkingNodeIds)).
+                                                  Concat(csms.OCPISshServers.SelectMany(server => server.ConnectedNetworkingNodeIds)),
+                    OCPPServingNode  node  => (node.StationServer?.ConnectedNetworkingNodeIds ?? []).
+                                                  Concat(node.StationSSHServer?.ConnectedNetworkingNodeIds ?? []),
+                    EMSP.EMSP        emsp  => emsp.OCPIServers.   SelectMany(server => server.ConnectedNetworkingNodeIds).
+                                                  Concat(emsp.OCPISshServers.SelectMany(server => server.ConnectedNetworkingNodeIds)),
+                    _                      => []
+                }).
+                Any(networkingNodeId => networkingNodeId.ToString() == Login.ToString());
 
         #endregion
 

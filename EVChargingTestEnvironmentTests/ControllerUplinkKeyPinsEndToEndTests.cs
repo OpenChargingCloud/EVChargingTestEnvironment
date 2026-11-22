@@ -46,7 +46,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
     /// <summary>
     /// The key pin of a local controller's own line to its CSMS, from end to end
     /// ("Key Pins and TLS 1.3 Raw Public Keys for Local Controllers", sections
-    /// 5.6 and 5.7, one level up): a real controller that dials a real CSMS over
+    /// 5.6 and 5.7, one level up): a real controller that connects to a real CSMS over
     /// wss://, pins nothing, learns the key the CSMS shows on first use and
     /// reports it - and the CSMS, whose own key that is, that confirms it with a
     /// pin set signed with its own key.
@@ -64,6 +64,8 @@ namespace cloud.charging.open.TestEnvironment.Tests
         #region Data
 
         private const String  ControllerId    = "lc001";
+
+        private static readonly User_Id ControllerLogin = User_Id.Parse(ControllerId);
         private const String  UplinkPassword  = "the-controllers-password-at-its-csms";
 
         private static readonly TimeSpan Patience = TimeSpan.FromSeconds(45);
@@ -217,7 +219,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
                            new JProperty("webSocketServer",  new JObject(
                                new JProperty("enabled",           true),
                                new JProperty("address",           "127.0.0.1"),
-                               new JProperty("port",              TestPorts.Free()),
+                               new JProperty("port",              TestPorts.Free().ToUInt16()),
                                new JProperty("clientAuthentication",  new JArray("httpAuthOverTLS")),
                                new JProperty("subprotocols",      new JArray("ocpp2.1"))
                            ))
@@ -225,15 +227,15 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
                        var management = new Management(
                                             DNSClient:       Resolver(),
-                                            HTTPPort:        IPPort.Parse(TestPorts.Free()),
+                                            HTTPPort:        TestPorts.Free(),
                                             AccountsPath:    Path.Combine(directory, "accounts"),
                                             ConfigFile:      new WWCPConfigFile(configFile),
                                             LogToConsole:    false,
                                             BridgeDebugLog:  false
                                         );
 
-                       Assert.That(management.WebSocketLogins.TrySetPasswordAuthentication       (ControllerId, UplinkPassword, null, I18NString.Create("tests"), out var error), Is.True, error);
-                       Assert.That(management.WebSocketLogins.TrySetLocalController(ControllerId, true, out var markError),                      Is.True, markError);
+                       Assert.That(management.WebSocketLogins.TrySetPasswordAuthentication       (ControllerLogin, UplinkPassword, null, I18NString.Create("tests"), out var error), Is.True, error);
+                       Assert.That(management.WebSocketLogins.TrySetLocalController(ControllerLogin, true, out var markError),                      Is.True, markError);
 
                        return management;
 
@@ -248,7 +250,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
         }
 
         /// <summary>
-        /// A controller that dials the CSMS over wss:// with its password, pins
+        /// A controller that connects to the CSMS over wss:// with its password, pins
         /// nothing, trusts the key the CSMS shows on first use, and believes pin
         /// sets of the given signer - started.
         /// </summary>
@@ -274,7 +276,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
                              var localController = new Controller(
                                                        DNSClient:       Resolver(),
-                                                       HTTPPort:        IPPort.Parse(TestPorts.Free()),
+                                                       HTTPPort:        TestPorts.Free(),
                                                        AccountsPath:    Path.Combine(directory, "accounts"),
                                                        ConfigFile:      new WWCPConfigFile(configFile),
                                                        LogToConsole:    false,
@@ -283,7 +285,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
                              Assert.That(localController.Node.Id.ToString(), Is.EqualTo(ControllerId));
 
-                             Assert.That(localController.TrySetUplinkPassword(ControllerId, UplinkPassword, out var uplinkError),          Is.True, uplinkError);
+                             Assert.That(localController.TrySetUplinkPassword(ControllerLogin, UplinkPassword, out var uplinkError),          Is.True, uplinkError);
                              Assert.That(localController.TrySetUplinkKeyPinTrust(new ServerKeyPinSettings(null, "Key", null), out var trustError), Is.True, trustError);
 
                              if (PinSetSigner is not null)

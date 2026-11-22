@@ -50,8 +50,8 @@ namespace cloud.charging.open.TestEnvironment.Tests
 {
 
     /// <summary>
-    /// OCPP over SSH from end to end, with a real CSMS as the server: a
-    /// charging station that dials its CSMS at "ssh://" itself, with no local
+    /// OCPP-over-SSH from end to end, with a real CSMS as the server: a
+    /// charging station that connects to its CSMS at "ssh://" itself, with no local
     /// controller in between (plan 5.7) - the tests of
     /// <see cref="OCPPOverSSHTests"/>, and what only the CSMS's station logins
     /// decide.
@@ -86,7 +86,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
             // machine took one before the CSMS could bind it.
             csms = await TestPorts.StartedOnFreshPorts(() => NewCSMS(csmsDirectory, CSMSConfiguration()));
 
-            Assert.That(csms.OCPPOverSSHServed, Is.True, "OCPP over SSH is switched on in the file, and not served.");
+            Assert.That(csms.OCPPOverSSHServed, Is.True, "OCPP-over-SSH is switched on in the file, and not served.");
 
         }
 
@@ -110,32 +110,32 @@ namespace cloud.charging.open.TestEnvironment.Tests
         protected override OCPPSshServer  StationSSHServer
             => CSMS.StationSSHServer!;
 
-        protected override UInt16         WebSocketPort
-            => CSMS.OCPPServerSettings.TCPPort!.Value.ToUInt16();
+        protected override IPPort         WebSocketPort
+            => CSMS.OCPPServerSettings.TCPPort!.Value;
 
         protected override IEnumerable<NetworkingNode_Id> WebSocketStations
             => CSMS.StationServer!.ConnectedNetworkingNodeIds;
 
-        protected override void GiveTheKey(String Login, ISshHostKey Key, String? Group = null)
+        protected override void GiveTheKey(User_Id Login, ISshHostKey Key, String? Group = null)
         {
             Assert.That(CSMS.TryAddStationSSHKey(Login, LineOf(Key), "test", Group, null, "tests", out _, out var error, out _),
                         Is.True, error);
         }
 
-        protected override void TakeAwayTheKey(String Login, String Fingerprint)
+        protected override void TakeAwayTheKey(User_Id Login, String Fingerprint)
         {
             Assert.That(CSMS.WebSocketLogins.TryRemoveSSHKey(Login, Fingerprint, out var error), Is.True, error);
         }
 
-        protected override void GiveThePassword(String Login, String Password)
+        protected override void GiveThePassword(User_Id Login, String Password)
         {
             Assert.That(CSMS.WebSocketLogins.TrySetPasswordAuthentication(Login, Password, null, I18NString.Create("tests"), out var error), Is.True, error);
         }
 
-        protected override Task<TriggerMessageResponse> AskForABootNotification(String Login)
+        protected override Task<TriggerMessageResponse> AskForABootNotification(User_Id Login)
 
             => CSMS.Node.TriggerMessage(
-                   Destination:       SourceRouting.To(NetworkingNode_Id.Parse(Login)),
+                   Destination:       SourceRouting.To(NetworkingNode_Id.Parse(Login.ToString())),
                    RequestedMessage:  MessageTrigger.BootNotification
                );
 
@@ -179,7 +179,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
                    new JProperty("webSocketServer",  new JObject(
                        new JProperty("enabled",           true),
                        new JProperty("address",           "127.0.0.1"),
-                       new JProperty("port",              TestPorts.Free()),
+                       new JProperty("port",              TestPorts.Free().ToUInt16()),
                        new JProperty("clientAuthentication",  new JArray("httpAuthWithoutTLS")),
                        new JProperty("subprotocols",      new JArray("ocpp2.1", "ocpp2.0.1")),
                        new JProperty("ssh",               new JObject(
@@ -189,7 +189,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
                    )),
                    new JProperty("ssh",         new JObject(
                        new JProperty("enabled",           true),
-                       new JProperty("port",              TestPorts.Free()),
+                       new JProperty("port",              TestPorts.Free().ToUInt16()),
 
                        // Served, so that a station refused SFTP is refused
                        // for being a station, and not because nobody gets it.
@@ -213,7 +213,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
             if (Configuration is not null)
                 File.WriteAllText(configFile, Configuration.ToString());
 
-            csmsHTTPPort = HTTPPort ?? IPPort.Parse(TestPorts.Free());
+            csmsHTTPPort = HTTPPort ?? TestPorts.Free();
 
             return new Management(
                        DNSClient:       Resolver(),
@@ -249,20 +249,20 @@ namespace cloud.charging.open.TestEnvironment.Tests
             // Longer than the test, so that only the store's own news can do it.
             CSMS.SSHSessionRecheckEvery = TimeSpan.FromMinutes(10);
 
-            var (cs001, connection001) = await AStationConnected("cs001");
-            var (cs002, connection002) = await AStationConnected("cs002");
+            var (cs001, connection001) = await AStationConnected(User_Id.Parse("cs001"));
+            var (cs002, connection002) = await AStationConnected(User_Id.Parse("cs002"));
 
-            Assert.That(CSMS.WebSocketLogins.TrySetEnabled("cs001", false, out var error), Is.True, error);
+            Assert.That(CSMS.WebSocketLogins.TrySetEnabled(User_Id.Parse("cs001"), false, out var error), Is.True, error);
 
-            await Until(() => !IsConnectedOverSSH("cs001") && !HasAnSSHSessionOf("cs001"), "The session of a station switched off ending", cs001);
+            await Until(() => !IsConnectedOverSSH(User_Id.Parse("cs001")) && !HasAnSSHSessionOf(User_Id.Parse("cs001")), "The session of a station switched off ending", cs001);
             await Until(() => StatusOf(cs001, connection001) == ConnectionStatus.Refused,  "The station being turned away when it comes back", cs001);
 
             Assert.Multiple(() => {
                 // The SSH connection is the station's and outlives the session: coming
                 // back is a new channel of it, and that is what is refused.
-                Assert.That(cs001.DialledConnections[connection001],  Does.Contain("refused it the OCPP subsystem"));
+                Assert.That(cs001.OutboundConnections[connection001],  Does.Contain("refused it the OCPP subsystem"));
                 Assert.That(StatusOf(cs002, connection002),           Is.EqualTo(ConnectionStatus.Connected), "Switching cs001 off ended cs002's session.");
-                Assert.That(IsConnectedOverSSH("cs002"),              Is.True);
+                Assert.That(IsConnectedOverSSH(User_Id.Parse("cs002")),              Is.True);
             });
 
         }
@@ -286,21 +286,21 @@ namespace cloud.charging.open.TestEnvironment.Tests
             Assert.That(CSMS.WebSocketLogins.TryAddOrUpdateGroup("field-test", "Field test", true, [ AuthMethod.Basic, AuthMethod.SSHKey ], [ WebSocketClientAuthentication.HTTPAuthWithoutTLS ], null, out var error),
                         Is.True, error);
 
-            var (inTheGroup, connection) = await AStationConnected("cs001", Group: "field-test");
-            var (elsewhere,  other)      = await AStationConnected("cs002");
+            var (inTheGroup, connection) = await AStationConnected(User_Id.Parse("cs001"), Group: "field-test");
+            var (elsewhere,  other)      = await AStationConnected(User_Id.Parse("cs002"));
 
             Assert.That(CSMS.WebSocketLogins.TryAddOrUpdateGroup("field-test", "Field test", true, [ AuthMethod.Basic ], [ WebSocketClientAuthentication.HTTPAuthWithoutTLS ], null, out error),
                         Is.True, error);
 
-            await Until(() => !IsConnectedOverSSH("cs001") && !HasAnSSHSessionOf("cs001"), "The session of a station whose group takes no SSH keys ending", inTheGroup);
+            await Until(() => !IsConnectedOverSSH(User_Id.Parse("cs001")) && !HasAnSSHSessionOf(User_Id.Parse("cs001")), "The session of a station whose group takes no SSH keys ending", inTheGroup);
             await Until(() => StatusOf(inTheGroup, connection) == ConnectionStatus.Refused, "The station being turned away when it comes back", inTheGroup);
 
             Assert.Multiple(() => {
                 // The SSH connection is the station's and outlives the session: coming
                 // back is a new channel of it, and that is what is refused.
-                Assert.That(inTheGroup.DialledConnections[connection],  Does.Contain("refused it the OCPP subsystem"));
+                Assert.That(inTheGroup.OutboundConnections[connection],  Does.Contain("refused it the OCPP subsystem"));
                 Assert.That(StatusOf(elsewhere, other),                 Is.EqualTo(ConnectionStatus.Connected), "A change to another group ended cs002's session.");
-                Assert.That(IsConnectedOverSSH("cs002"),                Is.True);
+                Assert.That(IsConnectedOverSSH(User_Id.Parse("cs002")),                Is.True);
             });
 
         }
@@ -310,7 +310,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
         #region OCPPOverSSH_SwitchedOff_TurnsTheStationsAway_AndOn_LetsThemIn_WithoutARestart()
 
         /// <summary>
-        /// OCPP over SSH switched off in the CSMS's configuration, while it
+        /// OCPP-over-SSH switched off in the CSMS's configuration, while it
         /// runs: the station's session ends, and the station is not let in at
         /// all when it comes back - not merely refused the subsystem. Switched
         /// on again, a station is let in, without the CSMS being started again.
@@ -319,25 +319,25 @@ namespace cloud.charging.open.TestEnvironment.Tests
         public async Task OCPPOverSSH_SwitchedOff_TurnsTheStationsAway_AndOn_LetsThemIn_WithoutARestart()
         {
 
-            var (station, connection) = await AStationConnected("cs001");
+            var (station, connection) = await AStationConnected(User_Id.Parse("cs001"));
 
             Assert.That(CSMS.TryUpdateOCPPServerConfiguration(JObject.Parse("""{ "ssh": { "enabled": false } }"""), out var error),
                         Is.True, error);
 
-            await Until(() => !IsConnectedOverSSH("cs001") && !HasAnSSHSessionOf("cs001"), "The session ending with OCPP over SSH switched off", station);
+            await Until(() => !IsConnectedOverSSH(User_Id.Parse("cs001")) && !HasAnSSHSessionOf(User_Id.Parse("cs001")), "The session ending with OCPP-over-SSH switched off", station);
             await Until(() => StatusOf(station, connection) == ConnectionStatus.Refused,    "The station being turned away when it comes back", station);
 
             Assert.Multiple(() => {
                 // The SSH connection is the station's and outlives the session: coming
                 // back is a new channel of it, and that is what is refused.
-                Assert.That(station.DialledConnections[connection],  Does.Contain("refused it the OCPP subsystem"));
+                Assert.That(station.OutboundConnections[connection],  Does.Contain("refused it the OCPP subsystem"));
                 Assert.That(CSMS.OCPPOverSSHServed,                  Is.False);
             });
 
             Assert.That(CSMS.TryUpdateOCPPServerConfiguration(JObject.Parse("""{ "ssh": { "enabled": true } }"""), out error),
                         Is.True, error);
 
-            await AStationConnected("cs002");
+            await AStationConnected(User_Id.Parse("cs002"));
 
         }
 

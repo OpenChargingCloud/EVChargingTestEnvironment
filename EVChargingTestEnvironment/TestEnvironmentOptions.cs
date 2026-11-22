@@ -136,7 +136,7 @@ namespace cloud.charging.open.TestEnvironment
         /// Leave the EMSP out.
         /// </summary>
         /// <remarks>
-        /// The one of the five that nothing else here dials: an EMSP is the
+        /// The one of the five that nothing else here connects to: an EMSP is the
         /// other end of an OCPI roaming agreement, and there is no CPO
         /// speaking OCPI on this bench yet. It runs all the same - its web
         /// interface, its OCPI endpoints and its log - so that a partner can
@@ -156,7 +156,7 @@ namespace cloud.charging.open.TestEnvironment
 
         /// <summary>
         /// Whether the two OCPP ports are encrypted, and the two things below
-        /// them dial <c>wss://</c> under security profile 2.
+        /// them connect with <c>wss://</c> under security profile 2.
         /// </summary>
         /// <remarks>
         /// <para>
@@ -242,11 +242,11 @@ namespace cloud.charging.open.TestEnvironment
         /// <summary>The CSMS's web interface.</summary>
         public IPPort  CSMSPort              => Shared ? SharedPort : IPPort.Parse((UInt16) (BasePort + 4));
 
-        /// <summary>What the two things that dial out are told to speak.</summary>
+        /// <summary>What the two things that connect are told to speak.</summary>
         public String  OCPPScheme            => OCPPTLS ? "wss" : "ws";
 
         /// <summary>
-        /// The OCPP security profile the two things that dial out use: a
+        /// The OCPP security profile the two things that connect use: a
         /// password over TLS, or a password on its own.
         /// </summary>
         public Byte    OCPPSecurityProfile   => (Byte) (OCPPTLS ? 2 : 1);
@@ -260,15 +260,15 @@ namespace cloud.charging.open.TestEnvironment
         /// One of them and not a generous list, because this list is what
         /// decides whether the port is encrypted at all: a way over TLS in it
         /// turns TLS on, and a port that is encrypted while the things below
-        /// it dial <c>ws://</c> answers them with a corrupted frame.
+        /// it connect with <c>ws://</c> answers them with a corrupted frame.
         /// </remarks>
         public IEnumerable<String> OCPPClientAuthentication
             => OCPPTLS ? [ "httpAuthOverTLS", "tlsClientCertificate" ] : [ "httpAuthWithoutTLS" ];
 
-        /// <summary>Where charging stations and local controllers dial the CSMS.</summary>
+        /// <summary>Where charging stations and local controllers connect to the CSMS.</summary>
         public IPPort  CSMSOCPPPort          => IPPort.Parse((UInt16) (BasePort + 5));
 
-        /// <summary>Where charging stations dial the local controller.</summary>
+        /// <summary>Where charging stations connect to the local controller.</summary>
         public IPPort  ControllerOCPPPort    => IPPort.Parse((UInt16) (BasePort + 6));
 
         /// <summary>
@@ -342,7 +342,7 @@ namespace cloud.charging.open.TestEnvironment
             => Layout == WebInterfaceLayout.SharedServer;
 
         /// <summary>The address everything listens on.</summary>
-        public IIPAddress Address
+        public org.GraphDefined.Vanaheimr.Hermod.IPAddress Address
             => AnyAddress
                    ? IPvXAddress.Any
                    : IPv4Address.Localhost;

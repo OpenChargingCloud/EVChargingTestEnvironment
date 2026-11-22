@@ -21,9 +21,9 @@
 using NUnit.Framework;
 
 using org.GraphDefined.Vanaheimr.Illias;
-using org.GraphDefined.Vanaheimr.Hermod;
 using org.GraphDefined.Vanaheimr.Hermod.DNS;
 using org.GraphDefined.Vanaheimr.Hermod.HTTP;
+using org.GraphDefined.Vanaheimr.Hermod.SSH;
 
 using cloud.charging.open.protocols.WWCP.Node.TestKit;
 using cloud.charging.open.protocols.WWCP.Node.Connections;
@@ -35,10 +35,10 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 {
 
     /// <summary>
-    /// A node that dials itself: a connection of its own store to its own
+    /// A node that connects to itself: a connection of its own store to its own
     /// station port, signed in with a login of its own - a self-test of both
     /// ends of a node at once. Every kind of node alike: a client and a
-    /// server of WebSockets are the same on each.
+    /// server of WebSockets and of SSH are the same on each.
     /// </summary>
     [TestFixture]
     public class ToItself : AHopByHopTest
@@ -81,7 +81,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
         /// <summary>
         /// A node of the given kind, with its station port switched on -
-        /// over TLS where the test dials over wss:// - and started.
+        /// over TLS where the test connects over wss:// - and started.
         /// </summary>
         /// <param name="Kind">"cs", "lc", "gw" or "csms".</param>
         private async Task<OCPPServingNode> Started(String Kind)
@@ -96,7 +96,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
                 "cs"    => new ChargingStation.ChargingStation(
                                DNSClient:        dnsClient,
-                               HTTPPort:         IPPort.Parse(TestPorts.Free()),
+                               HTTPPort:         TestPorts.Free(),
                                NoKiosk:          true,
                                AccountsPath:     directory.Accounts,
                                ConfigFile:       directory.ConfigFile,
@@ -106,7 +106,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
                 "lc"    => new LocalController.LocalController(
                                DNSClient:        dnsClient,
-                               HTTPPort:         IPPort.Parse(TestPorts.Free()),
+                               HTTPPort:         TestPorts.Free(),
                                AccountsPath:     directory.Accounts,
                                ConfigFile:       directory.ConfigFile,
                                LogToConsole:     false,
@@ -115,7 +115,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
                 "gw"    => new Gateway.Gateway(
                                DNSClient:        dnsClient,
-                               HTTPPort:         IPPort.Parse(TestPorts.Free()),
+                               HTTPPort:         TestPorts.Free(),
                                AccountsPath:     directory.Accounts,
                                ConfigFile:       directory.ConfigFile,
                                LogToConsole:     false,
@@ -124,7 +124,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
                 "csms"  => new CSMS.CSMS(
                                DNSClient:        dnsClient,
-                               HTTPPort:         IPPort.Parse(TestPorts.Free()),
+                               HTTPPort:         TestPorts.Free(),
                                AccountsPath:     directory.Accounts,
                                ConfigFile:       directory.ConfigFile,
                                LogToConsole:     false,
@@ -149,9 +149,9 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         #region WebSocket(Kind, Transport, Authentication)
 
         /// <summary>
-        /// The node dials its own station port, as its back end, with a login
-        /// of its own: it is connected as the one that dials, and let in as
-        /// the one that is dialled.
+        /// The node connects to its own station port, as its back end, with a login
+        /// of its own: it is connected as the one that connects, and let in as
+        /// the one that is connected to.
         /// </summary>
         [TestCase("cs",   "ws",  authPassword)]
         [TestCase("cs",   "wss", authPassword)]
@@ -172,8 +172,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             var itself       = await Started(Kind);
 
-            var login        = "self-" + RandomExtensions.RandomString(8);
-            var description  = $"{itself.NodeNoun} --({Transport}/{Authentication})--> itself";
+            var login        = User_Id.Parse("self-" + RandomExtensions.RandomString(8));
+            var description  = I18NString.Create($"{itself.NodeNoun} --({Transport}/{Authentication})--> itself");
 
             var credentials  = Credentials(itself, itself, login, Authentication, description);
 
@@ -181,7 +181,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             Assert.That(
                 itself.Connections.TryAddConnection(
-                     I18NString.Create(description),
+                     description,
                      URL.Parse($"{Transport}://{login}@127.0.0.1:{itself.OCPPServerSettings.TCPPort}"),
                      "CSMS",
                      true,
@@ -193,8 +193,91 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
                 Is.True, error
             );
 
-            await Until(() => StatusOf(itself, connection!) == ConnectionStatus.Connected,  $"'{login}' dialling over {Transport}",           itself);
-            await Until(() => IsConnectedAt(itself, login),                                 $"'{login}' being let in by the node it dialled",  itself);
+            await Until(() => StatusOf(itself, connection!) == ConnectionStatus.Connected,  $"'{login}' connecting over {Transport}",           itself);
+            await Until(() => IsConnectedAt(itself, login),                                 $"'{login}' being let in by the node it connected to",  itself);
+
+        }
+
+        #endregion
+
+        #region SSH(Kind, Authentication)
+
+        /// <summary>
+        /// The node connects to its own SSH server, as its back end, and pins the
+        /// host key it shows itself: with a password, with a one-time password
+        /// bound to the SSH session, or with its own key. It is connected as the
+        /// one that connects, and let in as the one that is connected to.
+        /// </summary>
+        [TestCase("cs",   authPassword)]
+        [TestCase("cs",   authTOTP)]
+        [TestCase("cs",   authPublicKey)]
+        [TestCase("lc",   authPassword)]
+        [TestCase("lc",   authTOTP)]
+        [TestCase("lc",   authPublicKey)]
+        [TestCase("gw",   authPassword)]
+        [TestCase("gw",   authTOTP)]
+        [TestCase("gw",   authPublicKey)]
+        [TestCase("csms", authPassword)]
+        [TestCase("csms", authTOTP)]
+        [TestCase("csms", authPublicKey)]
+        public async Task SSH(String  Kind,
+                              String  Authentication)
+        {
+
+            var itself       = await Started(Kind);
+
+            var login        = User_Id.Parse("self-" + RandomExtensions.RandomString(8));
+            var description  = I18NString.Create($"{itself.NodeNoun} --(ssh/{Authentication})--> itself");
+            var error        = "";
+            String? credentials = null;
+
+            Assert.That(itself.OCPPOverSSHServed, Is.True, "OCPP-over-SSH is switched on in the file, and not served.");
+
+            // Its own key, known to itself as a station's - or a password or the
+            // secret of one-time passwords, and its own key then is one it does
+            // not know.
+            if (Authentication == authPublicKey)
+            {
+
+                var key = await itself.SshKey.MakeIfNeeded();
+
+                Assert.That(
+                    itself.TryAddStationSSHKey(
+                        login,
+                        SshPublicKey.FromHostKey(key).ToAuthorizedKeyLine(),
+                        "test",
+                        null,
+                        null,
+                        "tests",
+                        out _,
+                        out error,
+                        out _
+                    ),
+                    Is.True, error
+                );
+
+            }
+
+            else
+                credentials = Credentials(itself, itself, login, Authentication, description);
+
+            Assert.That(
+                itself.Connections.TryAddConnection(
+                     description,
+                     URL.Parse($"ssh://{login}@127.0.0.1:{itself.SSHPort!.Value.ToUInt16()}"),
+                     "CSMS",
+                     true,
+                     credentials,
+                     null,
+                     out var connection,
+                     out error,
+                     SshHostKey: itself.SSHHostKey!.Split(' ', 2)[1]
+                ),
+                Is.True, error
+            );
+
+            await Until(() => StatusOf(itself, connection!) == ConnectionStatus.Connected,  $"'{login}' connecting over SSH",                     itself);
+            await Until(() => IsConnectedAt(itself, login),                                 $"'{login}' being let in by the node it connected to",  itself);
 
         }
 

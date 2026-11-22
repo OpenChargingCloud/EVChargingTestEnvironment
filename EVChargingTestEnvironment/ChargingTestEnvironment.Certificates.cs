@@ -29,7 +29,6 @@ using cloud.charging.open.protocols.WWCP.Node.Certificates;
 using cloud.charging.open.protocols.WWCP.Node.Logins;
 
 using Vehicle       = cloud.charging.open.EV.EV;
-using ControlStore  = cloud.charging.open.protocols.OCPP.Node.Serving;
 using LoginsStore = cloud.charging.open.protocols.WWCP.Node.Logins;
 
 #endregion
@@ -52,9 +51,11 @@ namespace cloud.charging.open.TestEnvironment
         /// station never presents.
         /// </remarks>
         public const String  StationNodeId     = "test02";
+        public static readonly User_Id StationLogin = User_Id.Parse(StationNodeId);
 
         /// <summary>What the local controller calls itself upwards.</summary>
         public const String  ControllerNodeId  = "LC001";
+        public static readonly User_Id ControllerLogin = User_Id.Parse(ControllerNodeId);
 
         /// <summary>The group a station's login belongs to, where the store keeps groups.</summary>
         private const String WebSocketLoginGroup        = "default";
@@ -72,7 +73,7 @@ namespace cloud.charging.open.TestEnvironment
         /// <para>
         /// Between construction and starting, and it has to be exactly there:
         /// the key stores are the components' own and do not exist before they
-        /// are built, and starting is the moment each of them dials out with
+        /// are built, and starting is the moment each of them connects with
         /// whatever it is holding.
         /// </para>
         /// <para>
@@ -128,13 +129,13 @@ namespace cloud.charging.open.TestEnvironment
 
             #endregion
 
-            #region The station: something to dial out with
+            #region The station: something to connect with
 
             EnsureClientCertificate();
 
             #endregion
 
-            #region The two that dial: whom they believe
+            #region The two that connect: whom they believe
 
             // The station believes a server of an OCPP connection, and the
             // local controller its CSMS, where its chain ends at a root the
@@ -170,27 +171,27 @@ namespace cloud.charging.open.TestEnvironment
             if (Controller is not null)
             {
 
-                // The station dials the controller...
-                AllowStation(Controller.WebSocketLogins, StationNodeId, stationSecret, "LC");
+                // The station connects to the controller...
+                AllowStation(Controller.WebSocketLogins, StationLogin, stationSecret, "LC");
 
-                // ...and the controller dials the CSMS.
-                AllowStation(CSMS.WebSocketLogins, ControllerNodeId, controllerSecret, "CSMS");
+                // ...and the controller connects to the CSMS.
+                AllowStation(CSMS.WebSocketLogins, ControllerLogin, controllerSecret, "CSMS");
 
                 // ...in the name of the station behind it, which a login may
                 // only where it is marked as a local controller's: a frame of
                 // any other login in another station's name is dropped.
-                if (!CSMS.WebSocketLogins.TrySetLocalController(ControllerNodeId, true, out var markError))
+                if (!CSMS.WebSocketLogins.TrySetLocalController(ControllerLogin, true, out var markError))
                     throw new InvalidOperationException($"CSMS: '{ControllerNodeId}' could not be marked as a local controller: {markError}");
 
-                DialTheCSMS(controllerSecret);
+                ConnectToTheCSMS(controllerSecret);
 
             }
 
             else
-                // No controller in the middle: the station dials the CSMS itself.
-                AllowStation(CSMS.WebSocketLogins, StationNodeId, stationSecret, "CSMS");
+                // No controller in the middle: the station connects to the CSMS itself.
+                AllowStation(CSMS.WebSocketLogins, StationLogin, stationSecret, "CSMS");
 
-            DialUpwards(stationSecret);
+            ConnectUpwards(stationSecret);
 
             #endregion
 
@@ -440,7 +441,7 @@ namespace cloud.charging.open.TestEnvironment
         /// Whose client certificates this end may believe: this environment's
         /// OCPP root, and nothing else.
         /// </summary>
-        private void EnsureTrustAnchor(ControlStore.ClientTrustStore Store, String Whose)
+        private void EnsureTrustAnchor(ClientTrustStore Store, String Whose)
         {
 
             if (Store.Entries.Count > 0)
@@ -459,7 +460,7 @@ namespace cloud.charging.open.TestEnvironment
         #region (private) EnsureClientCertificate()
 
         /// <summary>
-        /// What the station dials out with under OCPP security profile 3.
+        /// What the station connects with under OCPP security profile 3.
         /// </summary>
         /// <remarks>
         /// Minted whether or not the connection below is going to use it. It
@@ -472,7 +473,7 @@ namespace cloud.charging.open.TestEnvironment
         {
 
             // A TLS identity of the station's certificate store, which is
-            // where a station keeps who it is to a back end it dials. One of a
+            // where a station keeps who it is to a back end it connects to. One of a
             // station of before, kept in ocpp-client-keys/, was moved there at
             // its first start and is found here like one made here.
             var subject = $"CN={StationNodeId}, O=EV Charging Test Environment, C=DE";
@@ -525,7 +526,7 @@ namespace cloud.charging.open.TestEnvironment
         /// Write down who may sign in at an OCPP port, and with what.
         /// </summary>
         private void AllowStation(LoginsStore.WebSocketLogins         Logins,
-                                  String                              Id,
+                                  User_Id                             Login,
                                   String                              Secret,
                                   String                              Whose)
         {
@@ -542,14 +543,14 @@ namespace cloud.charging.open.TestEnvironment
                 throw new InvalidOperationException($"{Whose}: the login group could not be made: {groupError}");
             }
 
-            if (!Logins.TrySetPasswordAuthentication(Id, Secret, WebSocketLoginGroup, I18NString.Create("Set up by the test environment"), out var error))
-                throw new InvalidOperationException($"{Whose}: '{Id}' could not be allowed in: {error}");
+            if (!Logins.TrySetPasswordAuthentication(Login, Secret, WebSocketLoginGroup, I18NString.Create("Set up by the test environment"), out var error))
+                throw new InvalidOperationException($"{Whose}: '{Login}' could not be allowed in: {error}");
 
         }
 
         #endregion
 
-        #region (private) DialUpwards(Secret)
+        #region (private) ConnectUpwards(Secret)
 
         /// <summary>
         /// The one connection the station makes by itself when it starts: to
@@ -559,10 +560,10 @@ namespace cloud.charging.open.TestEnvironment
         /// <remarks>
         /// Replaced rather than added to at every start. The station keeps its
         /// connections between starts, and a second environment started with
-        /// <c>--base-port</c> would otherwise leave the station dialling a port
+        /// <c>--base-port</c> would otherwise leave the station connecting to a port
         /// that is no longer anybody's.
         /// </remarks>
-        private void DialUpwards(String Secret)
+        private void ConnectUpwards(String Secret)
         {
 
             var description = Controller is not null
@@ -590,7 +591,7 @@ namespace cloud.charging.open.TestEnvironment
             }
 
             if (!Station.Connections.TryAddPasswordAuthentication(
-                     StationNodeId,
+                     StationLogin,
                      Secret,
                      I18NString.Create(description),
                      out var authenticationId,
@@ -609,27 +610,27 @@ namespace cloud.charging.open.TestEnvironment
                      out _,
                      out var connectionError))
             {
-                throw new InvalidOperationException($"The station could not be told where to dial: {connectionError}");
+                throw new InvalidOperationException($"The station could not be told where to connect to: {connectionError}");
             }
 
         }
 
         #endregion
 
-        #region (private) DialTheCSMS(Secret)
+        #region (private) ConnectToTheCSMS(Secret)
 
         /// <summary>
         /// The line of the local controller up to the CSMS: a connection of
         /// its store, as the station's line is one of the station's.
         /// </summary>
         /// <remarks>
-        /// Replaced at every start for the reason <see cref="DialUpwards"/>
+        /// Replaced at every start for the reason <see cref="ConnectUpwards"/>
         /// gives. A controller whose store was still empty took the line of
         /// its configuration file of before over into the store, as "CSMS",
         /// with the password of before: that one goes too, or the controller
-        /// would dial its CSMS twice.
+        /// would connect to its CSMS twice.
         /// </remarks>
-        private void DialTheCSMS(String Secret)
+        private void ConnectToTheCSMS(String Secret)
         {
 
             if (Controller is null)
@@ -653,7 +654,7 @@ namespace cloud.charging.open.TestEnvironment
             }
 
             if (!Controller.Connections.TryAddPasswordAuthentication(
-                     ControllerNodeId,
+                     ControllerLogin,
                      Secret,
                      I18NString.Create(description),
                      out var authenticationId,
@@ -683,7 +684,7 @@ namespace cloud.charging.open.TestEnvironment
 
         /// <summary>
         /// What the OCPP root is called in the certificate stores of the two
-        /// that dial.
+        /// that connect.
         /// </summary>
         private const String OCPPRootLabel = "EV Charging Test Environment OCPP Root";
 

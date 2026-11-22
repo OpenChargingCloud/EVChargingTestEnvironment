@@ -99,6 +99,8 @@ namespace cloud.charging.open.TestEnvironment.Tests
         private const String  TheSecret       = "a-shared-secret-long-enough";
 
         private const String  ControllerId    = "lc001";
+
+        private static readonly User_Id ControllerLogin = User_Id.Parse(ControllerId);
         private const String  UplinkPassword  = "the-controllers-password-at-its-csms";
 
         private static readonly TimeSpan Patience = TimeSpan.FromSeconds(30);
@@ -217,7 +219,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
         /// <summary>
         /// A CSMS that is a charge point operator, with its station port and
-        /// OCPP over SSH switched on: the port on security profile 1, or on
+        /// OCPP-over-SSH switched on: the port on security profile 1, or on
         /// profile 3 - TLS, and a station is known by its certificate.
         /// </summary>
         private Management NewCSMS(String Directory, Boolean WithTLS = false)
@@ -232,7 +234,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
                 new JProperty("webSocketServer",  new JObject(
                     new JProperty("enabled",           true),
                     new JProperty("address",           "127.0.0.1"),
-                    new JProperty("port",              TestPorts.Free()),
+                    new JProperty("port",              TestPorts.Free().ToUInt16()),
                     new JProperty("clientAuthentication",  new JArray(WithTLS ? "tlsClientCertificate" : "httpAuthWithoutTLS")),
                     new JProperty("reachableAs",       new JArray("127.0.0.1")),
                     new JProperty("subprotocols",      new JArray("ocpp2.1", "ocpp2.0.1")),
@@ -242,7 +244,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
                 )),
                 new JProperty("ssh",         new JObject(
                     new JProperty("enabled",           true),
-                    new JProperty("port",              TestPorts.Free())
+                    new JProperty("port",              TestPorts.Free().ToUInt16())
                 )),
                 new JProperty("ocpi",        new JObject(
                     new JProperty("countryCode",     "DE"),
@@ -255,7 +257,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             var management = new Management(
                                  DNSClient:       Resolver(),
-                                 HTTPPort:        IPPort.Parse(TestPorts.Free()),
+                                 HTTPPort:        TestPorts.Free(),
                                  AccountsPath:    Path.Combine(Directory, "accounts"),
                                  ConfigFile:      new WWCPConfigFile(configFile),
                                  LogToConsole:    false,
@@ -263,12 +265,12 @@ namespace cloud.charging.open.TestEnvironment.Tests
                              );
 
             // The controller of the last test signs in here with a password.
-            Assert.That(management.WebSocketLogins.TrySetPasswordAuthentication(ControllerId, UplinkPassword, null, I18NString.Create("tests"), out var error), Is.True, error);
+            Assert.That(management.WebSocketLogins.TrySetPasswordAuthentication(ControllerLogin, UplinkPassword, null, I18NString.Create("tests"), out var error), Is.True, error);
 
             // A local controller's login: in the overlay network, which the
-            // controller dials by default, what it forwards in the name of
+            // controller connects to by default, what it forwards in the name of
             // its stations is taken only from a login marked as one.
-            Assert.That(management.WebSocketLogins.TrySetLocalController(ControllerId, true, out error), Is.True, error);
+            Assert.That(management.WebSocketLogins.TrySetLocalController(ControllerLogin, true, out error), Is.True, error);
 
             // Whatever the operator's CA vouches for is a station of this CSMS.
             if (WithTLS)
@@ -463,7 +465,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             var station = new Station(
                               DNSClient:       Resolver(),
-                              HTTPPort:        IPPort.Parse(TestPorts.Free()),
+                              HTTPPort:        TestPorts.Free(),
                               NoKiosk:         true,
                               AccountsPath:    Path.Combine(directory, "accounts"),
                               ConfigFile:      new WWCPConfigFile(configFile),
@@ -491,11 +493,11 @@ namespace cloud.charging.open.TestEnvironment.Tests
         /// A station that signs in to the CSMS over the given transport,
         /// started, connected and accepted.
         /// </summary>
-        private async Task<Station> AStationAtTheCSMS(String Transport, String Login)
+        private async Task<Station> AStationAtTheCSMS(String Transport, User_Id Login)
         {
 
             var station         = NewStation();
-            var webSocketPort   = CSMS.OCPPServerSettings.TCPPort!.Value.ToUInt16();
+            var webSocketPort   = CSMS.OCPPServerSettings.TCPPort!.Value;
             String? credentials = null;
             String? error;
             String  url;
@@ -529,7 +531,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
                     // A key of the station's own, and for it a certificate of
                     // the operator's CA that names the station: that name is
                     // who the CSMS takes it for.
-                    Assert.That(station.Certificates.TryCreateRequest(CertificateKind.TLSIdentity, Login, null, null, null, null, out var request, out error, out _), Is.True, error);
+                    Assert.That(station.Certificates.TryCreateRequest(CertificateKind.TLSIdentity, Login.ToString(), null, null, null, null, out var request, out error, out _), Is.True, error);
                     Assert.That(station.Certificates.TryAnswerRequest(SignedByTheOperatorsCA(request!.CSR), out var identity, out _, out _, out error, out _), Is.True, error);
                     Assert.That(identity, Is.Not.Null, "the signed certificate could not be put together with its key");
                     var keyId = identity!.Id;
@@ -615,7 +617,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
                     new JProperty("webSocketServer",  new JObject(
                         new JProperty("enabled",           true),
                         new JProperty("address",           "127.0.0.1"),
-                        new JProperty("port",              TestPorts.Free()),
+                        new JProperty("port",              TestPorts.Free().ToUInt16()),
                         new JProperty("clientAuthentication",  new JArray("httpAuthWithoutTLS")),
                         new JProperty("subprotocols",      new JArray("ocpp2.1", "ocpp2.0.1"))
                     ))
@@ -623,7 +625,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
                 var localController = new Controller(
                                           DNSClient:       Resolver(),
-                                          HTTPPort:        IPPort.Parse(TestPorts.Free()),
+                                          HTTPPort:        TestPorts.Free(),
                                           AccountsPath:    Path.Combine(directory, "accounts"),
                                           ConfigFile:      new WWCPConfigFile(configFile),
                                           LogToConsole:    false,
@@ -631,7 +633,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
                                       );
 
                 Assert.That(localController.Node.Id.ToString(), Is.EqualTo(ControllerId));
-                Assert.That(localController.TrySetUplinkPassword(ControllerId, UplinkPassword, out var loginError), Is.True, loginError);
+                Assert.That(localController.TrySetUplinkPassword(ControllerLogin, UplinkPassword, out var loginError), Is.True, loginError);
 
                 return localController;
 
@@ -646,11 +648,11 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             #region The station, below the controller
 
-            Assert.That(controller.WebSocketLogins.TrySetPasswordAuthentication("cs001", ThePassword, null, I18NString.Create("tests"), out var error), Is.True, error);
+            Assert.That(controller.WebSocketLogins.TrySetPasswordAuthentication(User_Id.Parse("cs001"), ThePassword, null, I18NString.Create("tests"), out var error), Is.True, error);
 
             var station = NewStation();
 
-            Assert.That(station.Connections.TryAddPasswordAuthentication("cs001", ThePassword, I18NString.Create("The controller"), out var credentials, out error), Is.True, error);
+            Assert.That(station.Connections.TryAddPasswordAuthentication(User_Id.Parse("cs001"), ThePassword, I18NString.Create("The controller"), out var credentials, out error), Is.True, error);
 
             Assert.That(station.Connections.TryAddConnection(I18NString.Create("The controller"),
                                                              URL.Parse($"ws://127.0.0.1:{controller.OCPPServerSettings.TCPPort!.Value.ToUInt16()}"),
@@ -707,7 +709,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
                        Concat(new (String Who, WWCPNode? Node)[] { ("CSMS", csms), ("EMSP", emsp), ("LC", controller) }.
                                   SelectMany(speaker => speaker.Node?.Log.Recent(100).Select(entry => $"  {speaker.Who,-4} {entry.Timestamp:HH:mm:ss.fff} [{entry.LevelName}] {entry.Message}") ?? [])).
                        Concat(Station?.Log.Recent(100).Select(entry => $"  CS   {entry.Timestamp:HH:mm:ss.fff} [{entry.LevelName}] {entry.Message}") ?? []).
-                       Concat(Station?.DialledConnections.Select(said => $"  CS   dialled {said.Key}: {said.Value}") ?? [])
+                       Concat(Station?.OutboundConnections.Select(said => $"  CS   connection {said.Key}: {said.Value}") ?? [])
                );
 
         #endregion
@@ -783,7 +785,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
         public async Task AStationBoots_AndItsCardsAreDecidedOnByTheCSMS(String Transport)
         {
 
-            var station = await AStationAtTheCSMS(Transport, "cs001");
+            var station = await AStationAtTheCSMS(Transport, User_Id.Parse("cs001"));
 
             Assert.That(atTheCSMS, Does.Contain("BootNotification"), $"The station's BootNotification did not reach the CSMS.{Story(station)}");
 

@@ -56,7 +56,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
 {
 
     /// <summary>
-    /// OCPP over SSH from end to end: a real charging station dialling a real
+    /// OCPP-over-SSH from end to end: a real charging station connecting to a real
     /// server at "ssh://", signed in with its own key, on the subsystem
     /// "ocpp@open.charging.cloud" of the server's SSH server - a local
     /// controller (<see cref="LocalControllerOverSSHTests"/>) or a CSMS
@@ -65,8 +65,8 @@ namespace cloud.charging.open.TestEnvironment.Tests
     /// <remarks>
     /// <para>
     /// What the plan "OCPP-over-SSH.md" asks of the integration in 5.8, and
-    /// what no repository can test on its own: the server's tests dial it
-    /// with a plain SSH message client, and the station's tests dial an SSH
+    /// what no repository can test on its own: the server's tests connect to it
+    /// with a plain SSH message client, and the station's tests connect to an SSH
     /// server of their own that stands in for a CSMS. Here both ends are the
     /// classes their programs run.
     /// </para>
@@ -78,7 +78,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
     /// server.
     /// </para>
     /// <para>
-    /// Every test here is asked of both servers, which build OCPP over SSH
+    /// Every test here is asked of both servers, which build OCPP-over-SSH
     /// from the same parts and decide who is let in each with its own station
     /// logins. What only one of them has is in its own fixture.
     /// </para>
@@ -141,14 +141,14 @@ namespace cloud.charging.open.TestEnvironment.Tests
         protected abstract OCPPv21Node    OCPPNode          { get; }
 
         /// <summary>
-        /// Its server of OCPP over SSH.
+        /// Its server of OCPP-over-SSH.
         /// </summary>
         protected abstract OCPPSshServer  StationSSHServer  { get; }
 
         /// <summary>
         /// The port its station server listens on for WebSockets.
         /// </summary>
-        protected abstract UInt16         WebSocketPort     { get; }
+        protected abstract IPPort         WebSocketPort     { get; }
 
         /// <summary>
         /// The stations connected to it over a WebSocket.
@@ -159,22 +159,22 @@ namespace cloud.charging.open.TestEnvironment.Tests
         /// Give the server the key of a station, in the given login group or
         /// in the default one.
         /// </summary>
-        protected abstract void GiveTheKey(String Login, ISshHostKey Key, String? Group = null);
+        protected abstract void GiveTheKey(User_Id Login, ISshHostKey Key, String? Group = null);
 
         /// <summary>
         /// Take a key of a station away from the server.
         /// </summary>
-        protected abstract void TakeAwayTheKey(String Login, String Fingerprint);
+        protected abstract void TakeAwayTheKey(User_Id Login, String Fingerprint);
 
         /// <summary>
         /// Give the server the password of a station on its WebSocket port.
         /// </summary>
-        protected abstract void GiveThePassword(String Login, String Password);
+        protected abstract void GiveThePassword(User_Id Login, String Password);
 
         /// <summary>
         /// The server asks the station to send its BootNotification again.
         /// </summary>
-        protected abstract Task<TriggerMessageResponse> AskForABootNotification(String Login);
+        protected abstract Task<TriggerMessageResponse> AskForABootNotification(User_Id Login);
 
         /// <summary>
         /// The server stops.
@@ -227,8 +227,8 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
         #region (protected) The server, as the stations see it
 
-        protected UInt16 SSHPort
-            => Server.SSHPort!.Value.ToUInt16();
+        protected IPPort SSHPort
+            => Server.SSHPort!.Value;
 
         /// <summary>
         /// The server's host key as a station pins it: "SHA256:...".
@@ -236,10 +236,10 @@ namespace cloud.charging.open.TestEnvironment.Tests
         protected String ServersHostKey
             => Server.SSHHostKey!.Split(' ', 2)[1];
 
-        protected Boolean IsConnectedOverSSH(String Login)
-            => StationSSHServer.ConnectedNetworkingNodeIds.Any(id => id.ToString() == Login);
+        protected Boolean IsConnectedOverSSH(User_Id Login)
+            => StationSSHServer.ConnectedNetworkingNodeIds.Any(id => id.ToString() == Login.ToString());
 
-        protected Boolean HasAnSSHSessionOf(String Login)
+        protected Boolean HasAnSSHSessionOf(User_Id Login)
             => Server.SSHSessions.Any(session => session.Account == Login);
 
         #endregion
@@ -250,7 +250,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
         /// A name resolver with its servers written down, rather than one that
         /// enumerates every network interface of the machine - see the
         /// station's own TestStations.Resolver for why that matters. Nothing
-        /// here resolves a name: everything is dialled at 127.0.0.1.
+        /// here resolves a name: everything is connected to at 127.0.0.1.
         /// </summary>
         protected DNSClient Resolver()
         {
@@ -287,7 +287,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             var station = new Station(
                               DNSClient:       Resolver(),
-                              HTTPPort:        IPPort.Parse(TestPorts.Free()),
+                              HTTPPort:        TestPorts.Free(),
                               NoKiosk:         true,
                               AccountsPath:    Path.Combine(directory, "accounts"),
                               ConfigFile:      new WWCPConfigFile(configFile),
@@ -317,14 +317,14 @@ namespace cloud.charging.open.TestEnvironment.Tests
         }
 
         /// <summary>
-        /// A station that dials the server at the given URL, its key given to
+        /// A station that connects to the server at the given URL, its key given to
         /// the server under the given login - in the given login group - where
         /// it is to be known, started. It pins the given host key, the
         /// server's own where none is given, and none where it is to pin
         /// nothing: a connection that pins nothing and does not trust on first
-        /// use is not dialled (ChargingStation 2b23a98).
+        /// use is not connected to (ChargingStation 2b23a98).
         /// </summary>
-        protected async Task<(Station Station, String Connection)> AStationDialling(String   Login,
+        protected async Task<(Station Station, String Connection)> AStationConnecting(User_Id  Login,
                                                                                     String?  Path         = null,
                                                                                     String?  HostKey      = null,
                                                                                     Boolean  PinsNothing  = false,
@@ -338,7 +338,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
             if (KeyIsKnown)
                 GiveTheKey(Login, key, Group);
 
-            Assert.That(station.Connections.TryAddConnection(I18NString.Create($"OCPP over SSH to {TheServer}"),
+            Assert.That(station.Connections.TryAddConnection(I18NString.Create($"OCPP-over-SSH to {TheServer}"),
                                                              URL.Parse($"ssh://{Login}@127.0.0.1:{SSHPort}{Path}"),
                                                              ConnectionType,
                                                              true,
@@ -373,11 +373,11 @@ namespace cloud.charging.open.TestEnvironment.Tests
         /// A station connected over SSH, registered by the server, and
         /// accepted by it.
         /// </summary>
-        protected async Task<(Station Station, String Connection)> AStationConnected(String   Login,
+        protected async Task<(Station Station, String Connection)> AStationConnected(User_Id  Login,
                                                                                      String?  Group  = null)
         {
 
-            var (station, connection) = await AStationDialling(Login, Group: Group);
+            var (station, connection) = await AStationConnecting(Login, Group: Group);
 
             await Until(() => StatusOf(station, connection) == ConnectionStatus.Connected, $"'{Login}' connecting over SSH",             station);
             await Until(() => IsConnectedOverSSH(Login),                                   $"'{Login}' being registered by {TheServer}", station);
@@ -392,10 +392,10 @@ namespace cloud.charging.open.TestEnvironment.Tests
         }
 
         /// <summary>
-        /// A station that dials the server's WebSocket port with a password,
+        /// A station that connects to the server's WebSocket port with a password,
         /// started.
         /// </summary>
-        protected async Task<(Station Station, String Connection)> AWebSocketStation(String Login)
+        protected async Task<(Station Station, String Connection)> AWebSocketStation(User_Id Login)
         {
 
             const String password = "a-password-long-enough-for-ocpp";
@@ -428,26 +428,26 @@ namespace cloud.charging.open.TestEnvironment.Tests
         protected static String LineOf(ISshHostKey Key)
             => SshPublicKey.FromHostKey(Key).ToAuthorizedKeyLine();
 
-        private SshClientOptions SSHAs(String Login, ISshHostKey Key)
+        private SSHClientOptions SSHAs(User_Id Login, ISshHostKey Key)
 
             => new () {
-                   Username       = Login,
+                   Username       = User_Id.Parse(Login.ToString()),
                    VerifyHostKey  = blob => Server.SSHHostKey == $"ssh-ed25519 {SshFingerprint.Sha256(blob)}",
                    Credentials    = [ Key ]
                };
 
-        protected async Task<SshClient> SignedInAs(String Login, ISshHostKey Key)
+        protected async Task<SSHClient> SignedInAs(User_Id Login, ISshHostKey Key)
 
-            => await SshClient.ConnectAsync("127.0.0.1", SSHPort, SSHAs(Login, Key)).AsTask().WaitAsync(TimeSpan.FromSeconds(10));
+            => await SSHClient.Connect("127.0.0.1", SSHPort, SSHAs(Login, Key)).AsTask().WaitAsync(TimeSpan.FromSeconds(10));
 
         /// <summary>
         /// Whether the server refused the given subsystem.
         /// </summary>
-        protected static async Task<Boolean> RefusesTheSubsystem(SshClient Client, String Name)
+        protected static async Task<Boolean> RefusesTheSubsystem(SSHClient Client, String Name)
         {
             try
             {
-                var channel = await Client.OpenSubsystemAsync(Name).AsTask().WaitAsync(TimeSpan.FromSeconds(10));
+                var channel = await Client.OpenSubsystem(Name).AsTask().WaitAsync(TimeSpan.FromSeconds(10));
                 await channel.CloseAsync();
                 return false;
             }
@@ -508,7 +508,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
                    new[] { "", "What was said:" }.
                        Concat(Speakers.SelectMany(speaker => speaker.Node?.Log.Recent(100).Select(entry => $"  {speaker.Who,-4} {entry.Timestamp:HH:mm:ss.fff} [{entry.LevelName}] {entry.Message}") ?? [])).
                        Concat(Station?.Log.Recent(100).Select(entry => $"  CS   {entry.Timestamp:HH:mm:ss.fff} [{entry.LevelName}] {entry.Message}") ?? []).
-                       Concat(Station?.DialledConnections.Select(said => $"  CS   dialled {said.Key}: {said.Value}") ?? [])
+                       Concat(Station?.OutboundConnections.Select(said => $"  CS   connection {said.Key}: {said.Value}") ?? [])
                );
 
         #endregion
@@ -519,7 +519,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
         #region AStationBootsOverSSH_AndItsHeartbeatIsAnswered()
 
         /// <summary>
-        /// The station dials "ssh://cs001@...", signs in with its own key, and
+        /// The station connects to "ssh://cs001@...", signs in with its own key, and
         /// registers: the server takes its BootNotification over an SSH
         /// connection, signed in as cs001, speaking OCPP 2.1, and accepts it.
         /// A heartbeat afterwards is answered over the same connection.
@@ -545,7 +545,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             };
 
-            var (station, _) = await AStationConnected("cs001");
+            var (station, _) = await AStationConnected(User_Id.Parse("cs001"));
 
             Assert.That(boots, Is.Not.Empty, $"The station was accepted, and {TheServer} saw no BootNotification.");
 
@@ -554,7 +554,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
             Assert.Multiple(() => {
                 Assert.That(bootCameOver,                Is.Not.Null,                      "The BootNotification did not come over SSH.");
                 Assert.That(bootCameOver?.Transport,     Is.EqualTo(MessageTransport.SSH));
-                Assert.That(bootCameOver?.Username,      Is.EqualTo("cs001"),              "The BootNotification came over another login than the station's.");
+                Assert.That(bootCameOver?.Username,      Is.EqualTo(User_Id.Parse("cs001")), "The BootNotification came over another login than the station's.");
                 Assert.That(bootCameOver?.Subprotocol,   Is.EqualTo("ocpp2.1"));
             });
 
@@ -589,9 +589,9 @@ namespace cloud.charging.open.TestEnvironment.Tests
                 return Task.CompletedTask;
             };
 
-            var (station, _) = await AStationConnected("cs001");
+            var (station, _) = await AStationConnected(User_Id.Parse("cs001"));
 
-            var answer = await AskForABootNotification("cs001");
+            var answer = await AskForABootNotification(User_Id.Parse("cs001"));
 
             Assert.That(answer.Result.ResultCode,  Is.EqualTo(ResultCode.OK), $"{answer.Result}{Story(station)}");
             Assert.That(answer.Status,             Is.EqualTo(TriggerMessageStatus.Accepted));
@@ -620,7 +620,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
                 return Task.CompletedTask;
             };
 
-            var (station, _) = await AStationConnected("cs001");
+            var (station, _) = await AStationConnected(User_Id.Parse("cs001"));
 
             var data       = Encoding.UTF8.GetBytes("Hello over SSH!");
             var reversed   = data.AsEnumerable().Reverse().ToArray();
@@ -668,7 +668,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
         public async Task AStation_ComesBack_AfterTheServerRestarts()
         {
 
-            var (station, connection) = await AStationConnected("cs001");
+            var (station, connection) = await AStationConnected(User_Id.Parse("cs001"));
 
             var pinned = station.Connections.Connections.Single().SshHostKey;
 
@@ -681,11 +681,11 @@ namespace cloud.charging.open.TestEnvironment.Tests
             await TheServerStartsAgain();
 
             await Until(() => StatusOf(station, connection) == ConnectionStatus.Connected, "The station coming back", station);
-            await Until(() => IsConnectedOverSSH("cs001"),                                $"The station being registered by {TheServer}, started again", station);
+            await Until(() => IsConnectedOverSSH(User_Id.Parse("cs001")),                                $"The station being registered by {TheServer}, started again", station);
 
             Assert.That(station.Connections.Connections.Single().SshHostKey, Is.EqualTo(pinned), "The pin changed across the restart.");
 
-            var answer = await AskForABootNotification("cs001");
+            var answer = await AskForABootNotification(User_Id.Parse("cs001"));
 
             Assert.That(answer.Status, Is.EqualTo(TriggerMessageStatus.Accepted), $"{answer.Result}{Story(station)}");
 
@@ -704,8 +704,8 @@ namespace cloud.charging.open.TestEnvironment.Tests
         public async Task AWebSocketStation_AndAnSSHStation_AreOnOneServerAtOnce()
         {
 
-            var (webSocketStation, webSocketConnection) = await AWebSocketStation("cs-ws");
-            var (sshStation,       sshConnection)       = await AStationConnected("cs-ssh");
+            var (webSocketStation, webSocketConnection) = await AWebSocketStation(User_Id.Parse("cs-ws"));
+            var (sshStation,       sshConnection)       = await AStationConnected(User_Id.Parse("cs-ssh"));
 
             await Until(() => StatusOf(webSocketStation, webSocketConnection) == ConnectionStatus.Connected, "The WebSocket station connecting",     webSocketStation);
 
@@ -716,8 +716,8 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             Assert.Multiple(() => {
                 Assert.That(StatusOf(sshStation, sshConnection),                       Is.EqualTo(ConnectionStatus.Connected), "The SSH station dropped when the WebSocket one came.");
-                Assert.That(IsConnectedOverSSH("cs-ssh"),                              Is.True);
-                Assert.That(IsConnectedOverSSH("cs-ws"),                               Is.False, "The WebSocket station is registered over SSH.");
+                Assert.That(IsConnectedOverSSH(User_Id.Parse("cs-ssh")),                              Is.True);
+                Assert.That(IsConnectedOverSSH(User_Id.Parse("cs-ws")),                               Is.False, "The WebSocket station is registered over SSH.");
                 Assert.That(WebSocketStations.Any(id => id.ToString() == "cs-ws"),     Is.True,  "The WebSocket station is not registered by the WebSocket server.");
                 Assert.That(WebSocketStations.Any(id => id.ToString() == "cs-ssh"),    Is.False, "The SSH station is registered by the WebSocket server.");
             });
@@ -725,7 +725,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
             foreach (var login in new[] { "cs-ws", "cs-ssh" })
             {
 
-                var answer = await AskForABootNotification(login);
+                var answer = await AskForABootNotification(User_Id.Parse(login));
 
                 Assert.That(answer.Status, Is.EqualTo(TriggerMessageStatus.Accepted), $"'{login}' was not reached: {answer.Result}{Story()}");
 
@@ -751,14 +751,14 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             var someoneElse = SshFingerprint.Sha256(SshHostKey.GenerateEd25519().PublicKeyBlob);
 
-            var (station, connection) = await AStationDialling("cs001", HostKey: someoneElse);
+            var (station, connection) = await AStationConnecting(User_Id.Parse("cs001"), HostKey: someoneElse);
 
             await Until(() => StatusOf(station, connection) == ConnectionStatus.Refused, $"Refusing {TheServer}", station);
 
             Assert.Multiple(() => {
-                Assert.That(station.DialledConnections[connection],                Does.Contain("was not believed").And.Contain(ServersHostKey).And.Contain(someoneElse));
-                Assert.That(HasAnSSHSessionOf("cs001"),                           Is.False, $"The station signed in to {TheServer}, which it did not believe.");
-                Assert.That(IsConnectedOverSSH("cs001"),                          Is.False);
+                Assert.That(station.OutboundConnections[connection],                Does.Contain("was not believed").And.Contain(ServersHostKey).And.Contain(someoneElse));
+                Assert.That(HasAnSSHSessionOf(User_Id.Parse("cs001")),                           Is.False, $"The station signed in to {TheServer}, which it did not believe.");
+                Assert.That(IsConnectedOverSSH(User_Id.Parse("cs001")),                          Is.False);
                 Assert.That(station.Connections.Connections.Single().SshHostKey,  Is.EqualTo(someoneElse), "The pin was changed by a server that showed another key.");
             });
 
@@ -766,11 +766,11 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
         #endregion
 
-        #region HostKey_NonePinned_IsNotDialled_SaysWhy_AndPinsNothing()
+        #region HostKey_NonePinned_IsNotConnectedTo_SaysWhy_AndPinsNothing()
 
         /// <summary>
         /// A station with no host key written down, and no trust on first use
-        /// asked for, does not dial at all: nothing says which server to
+        /// asked for, does not connect at all: nothing says which server to
         /// believe. It says why, signs in nowhere, and pins nothing.
         /// </summary>
         /// <remarks>
@@ -783,19 +783,19 @@ namespace cloud.charging.open.TestEnvironment.Tests
         /// probation until a signed pin set confirms it.
         /// </remarks>
         [Test]
-        public async Task HostKey_NonePinned_IsNotDialled_SaysWhy_AndPinsNothing()
+        public async Task HostKey_NonePinned_IsNotConnectedTo_SaysWhy_AndPinsNothing()
         {
 
-            var (station, connection) = await AStationDialling("cs001", PinsNothing: true);
+            var (station, connection) = await AStationConnecting(User_Id.Parse("cs001"), PinsNothing: true);
 
-            await Until(() => StatusOf(station, connection) == ConnectionStatus.NotConnected, "Not dialling with no host key pinned", station);
+            await Until(() => StatusOf(station, connection) == ConnectionStatus.NotConnected, "Not connecting with no host key pinned", station);
 
             var entry = station.Connections.Connections.Single();
 
             Assert.Multiple(() => {
-                Assert.That(station.DialledConnections[connection],  Does.Contain("pins no host key and does not trust on first use"));
-                Assert.That(HasAnSSHSessionOf("cs001"),             Is.False, $"The station signed in to {TheServer} with nothing to believe it by.");
-                Assert.That(IsConnectedOverSSH("cs001"),            Is.False);
+                Assert.That(station.OutboundConnections[connection],  Does.Contain("pins no host key and does not trust on first use"));
+                Assert.That(HasAnSSHSessionOf(User_Id.Parse("cs001")),             Is.False, $"The station signed in to {TheServer} with nothing to believe it by.");
+                Assert.That(IsConnectedOverSSH(User_Id.Parse("cs001")),            Is.False);
                 Assert.That(entry.SshHostKey,                       Is.Null,  "A host key was written down.");
                 Assert.That(entry.SshLearnedHostKey,                Is.Null,  "A host key was learned.");
             });
@@ -816,16 +816,16 @@ namespace cloud.charging.open.TestEnvironment.Tests
         {
 
             // cs001 is known, with a key that is not the station's.
-            GiveTheKey("cs001", SshHostKey.GenerateEd25519());
+            GiveTheKey(User_Id.Parse("cs001"), SshHostKey.GenerateEd25519());
 
-            var (station, connection) = await AStationDialling("cs001", KeyIsKnown: false);
+            var (station, connection) = await AStationConnecting(User_Id.Parse("cs001"), KeyIsKnown: false);
 
             await Until(() => StatusOf(station, connection) == ConnectionStatus.Refused, "Being turned away", station);
 
             Assert.Multiple(() => {
-                Assert.That(station.DialledConnections[connection],  Does.Contain("did not let this station in").And.Contain("not tried again"));
-                Assert.That(HasAnSSHSessionOf("cs001"),             Is.False, $"A key {TheServer} does not know signed in.");
-                Assert.That(IsConnectedOverSSH("cs001"),            Is.False);
+                Assert.That(station.OutboundConnections[connection],  Does.Contain("did not let this station in").And.Contain("not tried again"));
+                Assert.That(HasAnSSHSessionOf(User_Id.Parse("cs001")),             Is.False, $"A key {TheServer} does not know signed in.");
+                Assert.That(IsConnectedOverSSH(User_Id.Parse("cs001")),            Is.False);
             });
 
         }
@@ -844,14 +844,14 @@ namespace cloud.charging.open.TestEnvironment.Tests
         public async Task AHelloNamingAnotherStationThanTheLogin_IsRefused()
         {
 
-            var (station, connection) = await AStationDialling("cs001", Path: "/cs999");
+            var (station, connection) = await AStationConnecting(User_Id.Parse("cs001"), Path: "/cs999");
 
             await Until(() => StatusOf(station, connection) == ConnectionStatus.Refused, "Being refused", station);
 
             Assert.Multiple(() => {
-                Assert.That(station.DialledConnections[connection],  Does.Contain("refused it the OCPP subsystem"));
-                Assert.That(IsConnectedOverSSH("cs001"),            Is.False, "The login was registered.");
-                Assert.That(IsConnectedOverSSH("cs999"),            Is.False, "The station named in the HELLO was registered.");
+                Assert.That(station.OutboundConnections[connection],  Does.Contain("refused it the OCPP subsystem"));
+                Assert.That(IsConnectedOverSSH(User_Id.Parse("cs001")),            Is.False, "The login was registered.");
+                Assert.That(IsConnectedOverSSH(User_Id.Parse("cs999")),            Is.False, "The station named in the HELLO was registered.");
             });
 
         }
@@ -871,11 +871,11 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             var key = SshHostKey.GenerateEd25519();
 
-            GiveTheKey("cs-quiet", key);
+            GiveTheKey(User_Id.Parse("cs-quiet"), key);
 
-            await using var client  = await SignedInAs("cs-quiet", key);
+            await using var client  = await SignedInAs(User_Id.Parse("cs-quiet"), key);
 
-            var channel             = await client.OpenSubsystemAsync(Subsystem).AsTask().WaitAsync(TimeSpan.FromSeconds(10));
+            var channel             = await client.OpenSubsystem(Subsystem).AsTask().WaitAsync(TimeSpan.FromSeconds(10));
             var opened              = DateTimeOffset.UtcNow;
 
             Assert.That(await Task.WhenAny(channel.Closed, Task.Delay(TimeSpan.FromSeconds(3))), Is.Not.SameAs(channel.Closed),
@@ -884,7 +884,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
             Assert.That(await Task.WhenAny(channel.Closed, Task.Delay(TimeSpan.FromSeconds(20))), Is.SameAs(channel.Closed),
                         $"A channel without a HELLO was still open after {(DateTimeOffset.UtcNow - opened).TotalSeconds:F0} s.{Story()}");
 
-            Assert.That(IsConnectedOverSSH("cs-quiet"), Is.False);
+            Assert.That(IsConnectedOverSSH(User_Id.Parse("cs-quiet")), Is.False);
 
         }
 
@@ -902,9 +902,9 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             var key = SshHostKey.GenerateEd25519();
 
-            GiveTheKey("cs001", key);
+            GiveTheKey(User_Id.Parse("cs001"), key);
 
-            await using var client = await SignedInAs("cs001", key);
+            await using var client = await SignedInAs(User_Id.Parse("cs001"), key);
 
             async Task<Boolean> Granted(String Type, Byte[] Payload)
             {
@@ -970,7 +970,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             Assert.That(added.IsAdded, Is.True, added.Reason);
 
-            await using var client = await SignedInAs(WWCPNode.DefaultAdminUser, key);
+            await using var client = await SignedInAs(User_Id.Parse(WWCPNode.DefaultAdminUser.ToString()), key);
 
             var shell   = await client.Multiplexer.OpenChannelAsync("session").AsTask().WaitAsync(TimeSpan.FromSeconds(10));
             var console = await shell.SendRequestAsync("shell", true, []).AsTask().WaitAsync(TimeSpan.FromSeconds(10));
@@ -978,7 +978,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
             await shell.CloseAsync();
 
             Assert.That(console,                                      Is.True, "The account was not signed in for what it may do: its command line.");
-            Assert.That(await RefusesTheSubsystem(client, Subsystem), Is.True, "An account got OCPP over SSH.");
+            Assert.That(await RefusesTheSubsystem(client, Subsystem), Is.True, "An account got OCPP-over-SSH.");
 
         }
 
@@ -1004,8 +1004,8 @@ namespace cloud.charging.open.TestEnvironment.Tests
             // Longer than the test, so that only the rule's own change can do it.
             Server.SSHSessionRecheckEvery = TimeSpan.FromMinutes(10);
 
-            var (cs001, connection001) = await AStationConnected("cs001");
-            var (cs002, connection002) = await AStationConnected("cs002");
+            var (cs001, connection001) = await AStationConnected(User_Id.Parse("cs001"));
+            var (cs002, connection002) = await AStationConnected(User_Id.Parse("cs002"));
 
             var change = await Server.TryUpdateSSHConfiguration(new JObject(
                                    new JProperty("accessRules", new JArray(
@@ -1019,17 +1019,17 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             Assert.That(change.Error, Is.Null, change.Error);
 
-            await Until(() => !IsConnectedOverSSH("cs001") && StatusOf(cs001, connection001) != ConnectionStatus.Connected,
+            await Until(() => !IsConnectedOverSSH(User_Id.Parse("cs001")) && StatusOf(cs001, connection001) != ConnectionStatus.Connected,
                         "The rule ending cs001's session", cs001);
 
             // Coming back with its own key: signed in, and refused OCPP.
-            await using var again = await SignedInAs("cs001", cs001.SshKey.Key!);
+            await using var again = await SignedInAs(User_Id.Parse("cs001"), cs001.SshKey.Key!);
 
             Assert.Multiple(async () => {
                 Assert.That(await RefusesTheSubsystem(again, Subsystem),  Is.True,  "A station a rule denies got OCPP again.");
-                Assert.That(IsConnectedOverSSH("cs001"),                  Is.False, "A station a rule denies is connected.");
+                Assert.That(IsConnectedOverSSH(User_Id.Parse("cs001")),                  Is.False, "A station a rule denies is connected.");
                 Assert.That(StatusOf(cs002, connection002),               Is.EqualTo(ConnectionStatus.Connected), "A rule about cs001 ended cs002's session.");
-                Assert.That(IsConnectedOverSSH("cs002"),                  Is.True);
+                Assert.That(IsConnectedOverSSH(User_Id.Parse("cs002")),                  Is.True);
             });
 
         }
@@ -1050,16 +1050,16 @@ namespace cloud.charging.open.TestEnvironment.Tests
             // Longer than the test, so that only the store's own news can do it.
             Server.SSHSessionRecheckEvery = TimeSpan.FromMinutes(10);
 
-            var (station, connection) = await AStationConnected("cs001");
+            var (station, connection) = await AStationConnected(User_Id.Parse("cs001"));
 
-            TakeAwayTheKey("cs001", SshFingerprint.Sha256(station.SshKey.Key!.PublicKeyBlob));
+            TakeAwayTheKey(User_Id.Parse("cs001"), SshFingerprint.Sha256(station.SshKey.Key!.PublicKeyBlob));
 
-            await Until(() => !IsConnectedOverSSH("cs001") && !HasAnSSHSessionOf("cs001"), "The session of a key taken away ending", station);
+            await Until(() => !IsConnectedOverSSH(User_Id.Parse("cs001")) && !HasAnSSHSessionOf(User_Id.Parse("cs001")), "The session of a key taken away ending", station);
             await Until(() => StatusOf(station, connection) == ConnectionStatus.Refused,    "The station being turned away when it comes back", station);
 
             // The SSH connection is the station's and outlives the session: coming
             // back is a new channel of it, and that is what is refused.
-            Assert.That(station.DialledConnections[connection], Does.Contain("refused it the OCPP subsystem"));
+            Assert.That(station.OutboundConnections[connection], Does.Contain("refused it the OCPP subsystem"));
 
         }
 
@@ -1078,11 +1078,11 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
             var key = SshHostKey.GenerateEd25519();
 
-            GiveTheKey("cs-big", key);
+            GiveTheKey(User_Id.Parse("cs-big"), key);
 
-            await using var client  = await SignedInAs("cs-big", key);
+            await using var client  = await SignedInAs(User_Id.Parse("cs-big"), key);
 
-            var channel             = await client.OpenSubsystemAsync(Subsystem).AsTask().WaitAsync(TimeSpan.FromSeconds(10));
+            var channel             = await client.OpenSubsystem(Subsystem).AsTask().WaitAsync(TimeSpan.FromSeconds(10));
             var input               = channel.Input;
 
             await channel.SendDataAsync(SshMessageFraming.Encode(SshMessageFrameType.Hello, SshMessageHello.Create([ "ocpp2.1" ], null).ToBytes()));
@@ -1093,7 +1093,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
             Assert.That(SshMessageWelcome.Parse(welcome!.Value.Payload).MaxMessageSize, Is.EqualTo((UInt64) MaxMessageSize),
                         $"The limit {TheServer} announced is not the one in its file.");
 
-            await Until(() => IsConnectedOverSSH("cs-big"), "Registering the station");
+            await Until(() => IsConnectedOverSSH(User_Id.Parse("cs-big")), "Registering the station");
 
             // The header of a TEXT frame one byte longer than the limit, and
             // nothing of its payload.
@@ -1108,7 +1108,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
             Assert.That(answer?.Type, Is.EqualTo(SshMessageFrameType.Close), $"No CLOSE: {TheServer} waited for a payload longer than it takes.");
             Assert.That(SshMessageFraming.DecodeClose(answer!.Value.Payload).Code, Is.EqualTo(MessageCloseCode.MessageTooBig));
 
-            await Until(() => !IsConnectedOverSSH("cs-big"), $"The connection being forgotten by {TheServer}");
+            await Until(() => !IsConnectedOverSSH(User_Id.Parse("cs-big")), $"The connection being forgotten by {TheServer}");
 
         }
 
