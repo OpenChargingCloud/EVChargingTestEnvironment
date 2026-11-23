@@ -71,6 +71,15 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         private Controller?        controller;
         private GridOperatorNode?  grid;
 
+        /// <summary>
+        /// The directories and web ports of both nodes: a node restarted is
+        /// started again from them.
+        /// </summary>
+        private NodeDirectory?     gridDirectory;
+        private IPPort?            gridHTTPPort;
+        private NodeDirectory?     controllerDirectory;
+        private IPPort?            controllerHTTPPort;
+
         #endregion
 
         #region SetUp / TearDown
@@ -78,6 +87,12 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         [SetUp]
         public async Task Start()
         {
+
+            // One fixture runs every test: each starts with nodes of their own.
+            gridDirectory        = null;
+            gridHTTPPort         = null;
+            controllerDirectory  = null;
+            controllerHTTPPort   = null;
 
             dnsClient   = new DNSClient(SearchForIPv6DNSServers: false);
 
@@ -88,16 +103,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             foreach (var point in new[] { PointOne, PointTwo })
                 Assert.That(grid.TryAddGridConnectionPoint(APoint(point), "test", out _, out var error, out _), Is.True, error);
 
-            var directory  = NewNodeDirectory("lc");
-
-            controller  = new Controller(
-                              DNSClient:       dnsClient,
-                              HTTPPort:        TestPorts.Free(),
-                              AccountsPath:    directory.Accounts,
-                              ConfigFile:      directory.ConfigFile,
-                              LogToConsole:    false,
-                              BridgeDebugLog:  false
-                          );
+            controller  = NewController();
 
             await controller.Start();
 
@@ -130,12 +136,15 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         /// A grid operator of its own directory: its WebSocket port of OpenADR
         /// switched on - over TLS, with a certificate of the test's CA, where the
         /// test connects over wss:// - and its SSH server, serving the subsystem
-        /// of the REST API of OpenADR.
+        /// of the REST API of OpenADR. Asked again, it is the grid operator of
+        /// that directory and web port again, as it is after a restart.
         /// </summary>
         private GridOperatorNode NewGridOperator()
         {
 
-            var directory  = NewNodeDirectory(
+            var fresh      = gridDirectory is null;
+
+            var directory  = gridDirectory ??= NewNodeDirectory(
                                  "go",
                                  new JProperty("gridOperator", new JObject(
                                      new JProperty("@id",   "DE*SWJ"),
@@ -160,17 +169,77 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
                                  ))
                              );
 
-            if (OverTLS)
+            if (OverTLS && fresh)
                 ACertificateOfTheTestCA(Path.GetDirectoryName(directory.ConfigFile.Path)!, GridOperatorNode.VENListener);
 
             return new GridOperatorNode(
-                       HTTPPort:        TestPorts.Free(),
+                       HTTPPort:        gridHTTPPort ??= TestPorts.Free(),
                        AccountsPath:    directory.Accounts,
                        ConfigFile:      directory.ConfigFile,
                        DNSClient:       dnsClient,
                        LogToConsole:    false,
                        BridgeDebugLog:  false
                    );
+
+        }
+
+        #endregion
+
+        #region (private) NewController()
+
+        /// <summary>
+        /// A local controller of its own directory - asked again, the local
+        /// controller of that directory and web port again, as it is after a
+        /// restart.
+        /// </summary>
+        private Controller NewController()
+        {
+
+            var directory = controllerDirectory ??= NewNodeDirectory("lc");
+
+            return new Controller(
+                       DNSClient:       dnsClient,
+                       HTTPPort:        controllerHTTPPort ??= TestPorts.Free(),
+                       AccountsPath:    directory.Accounts,
+                       ConfigFile:      directory.ConfigFile,
+                       LogToConsole:    false,
+                       BridgeDebugLog:  false
+                   );
+
+        }
+
+        #endregion
+
+        #region (private) RestartTheGridOperator() / RestartTheController()
+
+        /// <summary>
+        /// The grid operator stops, and starts again from its directory: what it
+        /// wrote down it has again, what it held in its memory only is gone.
+        /// </summary>
+        private async Task RestartTheGridOperator()
+        {
+
+            await grid!.Stop();
+            await grid.DisposeAsync();
+
+            grid = NewGridOperator();
+
+            await grid.Start();
+
+        }
+
+        /// <summary>
+        /// The local controller stops, and starts again from its directory.
+        /// </summary>
+        private async Task RestartTheController()
+        {
+
+            await controller!.Stop();
+            await controller.DisposeAsync();
+
+            controller = NewController();
+
+            await controller.Start();
 
         }
 
@@ -215,7 +284,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         #endregion
 
 
-        #region (private) TheControllerConnects(Authentication, Transport, PointId = GCP-1, Enabled = true, Binding = "rest")
+        #region (private) TheControllerConnects(Authentication, Transport, PointId = GCP-1, Enabled = true, Binding = "rest", InboundBinding = null)
 
         /// <summary>
         /// The grid operator writes the local controller down as a VEN that
@@ -230,12 +299,14 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         /// <param name="PointId">The grid connection point the VEN is behind.</param>
         /// <param name="Enabled">Whether the grid operator's connection of the VEN is switched on.</param>
         /// <param name="Binding">"rest" or "messages": the binding both ends write the connection down with.</param>
+        /// <param name="InboundBinding">The binding the grid operator writes the connection down with, where it is not the controller's.</param>
         /// <returns>The login, the VEN, the connection at the controller and the one at the grid operator.</returns>
         private async Task<(User_Id Login, String VEN, String Connection, String Inbound)> TheControllerConnects(String   Authentication,
                                                                                                                String   Transport,
                                                                                                                String   PointId   = PointOne,
                                                                                                                Boolean  Enabled   = true,
-                                                                                                               String   Binding   = bindingREST)
+                                                                                                               String   Binding          = bindingREST,
+                                                                                                               String?  InboundBinding   = null)
         {
 
             var controller   = this.controller!;
@@ -272,7 +343,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
                     out var inbound,
                     out error,
                     Inbound:         true,
-                    OpenADRBinding:  Binding,
+                    OpenADRBinding:  InboundBinding ?? Binding,
                     VEN:             ven
                 ),
                 Is.True, error
@@ -354,7 +425,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             Assert.That(changed, Is.True, wrong);
 
-            if (Enabled)
+            if (Enabled && (InboundBinding ?? Binding) == Binding)
             {
                 await Until(() => StatusOf(controller, connection!) == ConnectionStatus.Connected,  $"'{login}' connecting over {Transport}",          controller, grid);
                 await Until(() => StatusOf(grid,       inbound!)    == ConnectionStatus.Connected,  $"'{login}' being let in by the grid operator",  controller, grid);
@@ -791,6 +862,182 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             // ...and neither the other one nor the command line does.
             Assert.That(async () => await ssh.OpenSubsystem(theOther), Throws.Exception, $"A VEN of the binding '{Binding}' got the subsystem {theOther}.");
             Assert.That(async () => await ssh.OpenShell(),             Throws.Exception, "A VEN got the command line of the grid operator.");
+
+        }
+
+        #endregion
+
+
+        #region OpenADR_AfterTheGridOperatorRestarts_ALimitIsToldOverTheNewConnection(Transport)
+
+        /// <summary>
+        /// The grid operator restarts, and the subscriptions it held in its
+        /// memory only are gone with it: the controller connects again, finds no
+        /// subscription of its own over the new connection and subscribes anew -
+        /// and a limit sent then reaches it by Notify, long before its next poll.
+        /// </summary>
+        [TestCase("ws")]
+        [TestCase("ssh")]
+        public async Task OpenADR_AfterTheGridOperatorRestarts_ALimitIsToldOverTheNewConnection(String Transport)
+        {
+
+            var controller = this.controller!;
+
+            var (_, ven, connection, inbound) = await TheControllerConnects(authPassword, Transport, Binding: bindingMessages);
+
+            await Until(() => this.grid!.Subscriptions.Of(ven).Count == 1, $"'{ven}' subscribing to the events over its connection", controller, this.grid);
+
+            await RestartTheGridOperator();
+
+            var grid = this.grid!;
+
+            await Until(() => StatusOf(grid,       inbound)    == ConnectionStatus.Connected, "the controller connecting again to the grid operator restarted", controller, grid);
+            await Until(() => StatusOf(controller, connection) == ConnectionStatus.Connected, "the controller seeing its connection up again",                 controller, grid);
+            await Until(() => grid.Subscriptions.Of(ven).Count == 1,                           $"'{ven}' subscribing anew over the new connection",              controller, grid);
+
+            var told = controller.OpenADRNotificationsReceived;
+
+            Assert.That(grid.TrySendLimit(new JObject(new JProperty("kind",                   "IMPORT_CAPACITY_LIMIT"),
+                                                      new JProperty("limitKW",                55),
+                                                      new JProperty("durationMinutes",        60),
+                                                      new JProperty("gridConnectionPointId",  PointOne)),
+                                          "test", out _, out var error, out _),
+                        Is.True, error);
+
+            await Until(() => controller.ImportLimitNow?.KW == 55, "the limit reaching the controller by Notify over the new connection", controller, grid);
+
+            Assert.That(controller.OpenADRNotificationsReceived, Is.GreaterThan(told), "The controller read the limit, and was not told of it.");
+
+        }
+
+        #endregion
+
+        #region OpenADR_AfterTheControllerRestarts_ItIsSubscribedOnce(Transport)
+
+        /// <summary>
+        /// The controller restarts and connects again; the grid operator still
+        /// holds the subscription it made over its connection before: the
+        /// controller finds it and subscribes no second time - and a limit sent
+        /// then reaches it by Notify over the new connection, once.
+        /// </summary>
+        [TestCase("ws")]
+        [TestCase("ssh")]
+        public async Task OpenADR_AfterTheControllerRestarts_ItIsSubscribedOnce(String Transport)
+        {
+
+            var grid = this.grid!;
+
+            var (_, ven, connection, inbound) = await TheControllerConnects(authPassword, Transport, Binding: bindingMessages);
+
+            await Until(() => grid.Subscriptions.Of(ven).Count == 1, $"'{ven}' subscribing to the events over its connection", this.controller, grid);
+
+            await RestartTheController();
+
+            var controller = this.controller!;
+
+            await Until(() => StatusOf(controller, connection) == ConnectionStatus.Connected, "the controller restarted connecting again", controller, grid);
+            await Until(() => StatusOf(grid,       inbound)    == ConnectionStatus.Connected, "the grid operator letting it in again",     controller, grid);
+            await Until(() => controller.OpenADRLastPoll.Asked is not null,                     "the controller asking over the new connection", controller, grid);
+
+            Assert.That(grid.Subscriptions.Of(ven).Count, Is.EqualTo(1), $"The controller subscribed a second time.{Story(controller, grid)}");
+
+            Assert.That(grid.TrySendLimit(new JObject(new JProperty("kind",                   "IMPORT_CAPACITY_LIMIT"),
+                                                      new JProperty("limitKW",                66),
+                                                      new JProperty("durationMinutes",        60),
+                                                      new JProperty("gridConnectionPointId",  PointOne)),
+                                          "test", out _, out var error, out _),
+                        Is.True, error);
+
+            await Until(() => controller.ImportLimitNow?.KW == 66, "the limit reaching the controller restarted by Notify", controller, grid);
+
+            Assert.That(controller.OpenADRNotificationsReceived, Is.GreaterThanOrEqualTo(1), "The controller read the limit, and was not told of it.");
+
+        }
+
+        #endregion
+
+        #region OpenADR_AConnectionOfTheOtherBinding_IsNotLetIn(Transport, Binding)
+
+        /// <summary>
+        /// A connection the controller speaks in the one binding and the grid
+        /// operator wrote down for the other is not let in - over a WebSocket its
+        /// subprotocol is refused before the upgrade, over SSH the subsystem it
+        /// asks for is not served to it - and the controller reads no limit.
+        /// </summary>
+        [TestCase("ws",  bindingREST)]
+        [TestCase("ws",  bindingMessages)]
+        [TestCase("ssh", bindingREST)]
+        [TestCase("ssh", bindingMessages)]
+        public async Task OpenADR_AConnectionOfTheOtherBinding_IsNotLetIn(String Transport, String Binding)
+        {
+
+            var grid        = this.grid!;
+            var controller  = this.controller!;
+            var theOther    = Binding == bindingREST ? bindingMessages : bindingREST;
+
+            var (login, _, connection, inbound) = await TheControllerConnects(authPassword, Transport, Binding: Binding, InboundBinding: theOther);
+
+            await Until(() => StatusOf(controller, connection) is ConnectionStatus.Refused or ConnectionStatus.Failed,
+                        $"'{login}', speaking '{Binding}', being turned away from a connection written down for '{theOther}'",
+                        controller, grid);
+
+            Assert.That(grid.TrySendLimit(new JObject(new JProperty("kind",                   "IMPORT_CAPACITY_LIMIT"),
+                                                      new JProperty("limitKW",                33),
+                                                      new JProperty("durationMinutes",        60),
+                                                      new JProperty("gridConnectionPointId",  PointOne)),
+                                          "test", out _, out var error, out _),
+                        Is.True, error);
+
+            var problem = await controller.PollOpenADR();
+
+            Assert.Multiple(() => {
+                Assert.That(problem,                     Is.Not.Null,                                 "The controller asked the VTN through a connection of the other binding.");
+                Assert.That(controller.ImportLimitNow,   Is.Null,                                     "The controller read a limit through a connection of the other binding.");
+                Assert.That(StatusOf(grid, inbound),     Is.Not.EqualTo(ConnectionStatus.Connected),  "The grid operator let in a connection of the other binding.");
+                Assert.That(IsConnectedAt(grid, login),  Is.False,                                    $"The grid operator let '{login}' in.");
+            });
+
+        }
+
+        #endregion
+
+        #region OpenADR_ARemovedVEN_ReadsNoLimit(Transport, Binding)
+
+        /// <summary>
+        /// A VEN the grid operator lets sign in no more reads no limit over its
+        /// connection, open as it may be still - the limit sent to its point
+        /// afterwards, for the other VEN there: what it asks is refused.
+        /// </summary>
+        [TestCase("ws",  bindingREST)]
+        [TestCase("ws",  bindingMessages)]
+        [TestCase("ssh", bindingREST)]
+        [TestCase("ssh", bindingMessages)]
+        public async Task OpenADR_ARemovedVEN_ReadsNoLimit(String Transport, String Binding)
+        {
+
+            var grid        = this.grid!;
+            var controller  = this.controller!;
+
+            var (_, ven, _, _) = await TheControllerConnects(authPassword, Transport, Binding: Binding);
+
+            // Another VEN behind the same point, that the limit goes to still.
+            AVEN(PointOne);
+
+            Assert.That(grid.TryRemoveLocalController(ven, "test", out var error, out _), Is.True, error);
+
+            Assert.That(grid.TrySendLimit(new JObject(new JProperty("kind",                   "IMPORT_CAPACITY_LIMIT"),
+                                                      new JProperty("limitKW",                33),
+                                                      new JProperty("durationMinutes",        60),
+                                                      new JProperty("gridConnectionPointId",  PointOne)),
+                                          "test", out _, out error, out _),
+                        Is.True, error);
+
+            var problem = await controller.PollOpenADR();
+
+            Assert.Multiple(() => {
+                Assert.That(problem,                    Is.Not.Null,  $"The VTN answered a VEN it lets sign in no more.{Story(controller, grid)}");
+                Assert.That(controller.ImportLimitNow,  Is.Null,      "A VEN the grid operator lets sign in no more read the limit of its point.");
+            });
 
         }
 

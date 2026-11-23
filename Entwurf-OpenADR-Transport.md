@@ -594,3 +594,63 @@ Neu sind:
 - MQTT.
 - Die Weboberflächen von LocalController und Netzbetreiber zeigen Bindung und
   Abos nicht.
+
+## 10. Schritt D gebaut
+
+`LC_2_GO` deckt jetzt ab, was Abschnitt 6.4 für Schritt D nennt. Das meiste
+davon entstand schon in Schritt C:
+
+- WebSocket, WebSocketTLS, WebSocketMTLS und SSH, je mit Nachrichten und REST;
+- Limits lesen und den Report schicken;
+- `Notify` vor dem nächsten Poll, auch für den Widerruf;
+- Rollentrennung: ein anderer VEN, ein ausgeschalteter Eintrag, über SSH keine
+  Kommandozeile.
+
+### 10.1 Was dazukam
+
+Zwölf Fälle, jeweils über ws und ssh:
+
+- **Der Netzbetreiber startet neu.** Seine Abos liegen nur im Speicher und
+  sind danach weg. Der LocalController verbindet sich neu, findet über die neue
+  Verbindung kein eigenes Abo und abonniert neu. Ein Limit kommt dann per
+  `Notify` über die neue Verbindung an.
+- **Der LocalController startet neu.** Der Netzbetreiber hält sein Abo noch.
+  Der LocalController findet es und abonniert kein zweites Mal. Ein Limit kommt
+  per `Notify` über die neue Verbindung.
+- **Die falsche Bindung an der Tür.** Der LocalController spricht die eine
+  Bindung, der Netzbetreiber hat die andere eingetragen. Das wird in beide
+  Richtungen geprüft. Über WebSocket wird das Subprotokoll abgelehnt, über SSH
+  wird das Subsystem nicht bedient. Der LocalController liest kein Limit.
+- **Ein entzogener VEN.** Nach `TryRemoveLocalController` wird jede Anfrage
+  über die noch offene Verbindung abgelehnt, in beiden Bindungen. Ein danach
+  geschicktes Limit liest er nicht.
+
+Damit die Neustarts gehen, bauen `NewGridOperator()` und `NewController()` den
+Knoten aus demselben Verzeichnis und mit demselben Web-Port neu, wie nach
+einem Neustart. Weil NUnit für alle Tests dieselbe Fixture-Instanz verwendet,
+setzt `SetUp` beides zurück.
+
+### 10.2 Was der Test des entzogenen VEN zeigt
+
+Ein Limit, das vor dem Entzug geschickt wurde, kann noch per `Notify`
+ankommen. Der LocalController behält es dann als letzten bekannten Stand. Der
+Test entzieht deshalb erst den VEN und schickt danach das Limit. Ein zweiter
+VEN hinter demselben Punkt ist nötig, weil der Netzbetreiber kein Limit an
+einen Punkt ohne VEN annimmt.
+
+### 10.3 Tests
+
+Env: 383, davon 43 in `LC_2_GO` (12 neu). Code der Knoten hat sich in
+Schritt D nicht geändert.
+
+### 10.4 Offen
+
+Die Punkte aus 9.6 bleiben offen:
+
+- Ein ausgeschalteter oder gelöschter Eintrag schließt eine offene
+  Verbindung nicht.
+- `Notify` wird nicht gepuffert, solange der VEN nicht verbunden ist.
+- MQTT fehlt.
+- Die Weboberflächen zeigen Bindung und Abos nicht.
+- Seiten, HTTP-API und Kommandozeile für Verbindungen und WebSocket-Logins
+  des Netzbetreibers fehlen.

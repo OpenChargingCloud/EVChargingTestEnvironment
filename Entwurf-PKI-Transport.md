@@ -57,10 +57,12 @@ steht sie hier.
 | `GetCertificateStatus` | `certificateId` oder `serialNumber` | `status`, `certificateStatus` (`valid`, `revoked`, `expired`, `notYetValid`, `unknown`), `certificateId`, `revokedAt`?, `revocationReason`? |
 | `GetCRL` | `issuerId` oder `label`? | `status`, `crl` (PEM), `issuerId` |
 | `RevokeCertificate` | `certificateId` oder `serialNumber`, `reason` (RFC 5280) | `status`, `statusInfo`? |
+| `GetOCSPResponse` | `ocspRequest` (DER in Base64, höchstens 16384 Zeichen) | `status`, `ocspResponse` (DER in Base64, signiert vom Responder der CA), `statusInfo`? |
 
 `status` ist `Accepted` oder `Rejected`. `statusInfo.reasonCode` sagt den
 Grund: `UnknownLabel`, `InvalidCSR`, `NotSigned`, `NotFound`, `NotYours`,
-`UnknownCA`, `NoCRL`, `UnknownReason`, `NotRevoked`, `NotSaved`.
+`UnknownCA`, `NoCRL`, `UnknownReason`, `NotRevoked`, `NotSaved`,
+`InvalidOCSPRequest`.
 
 Fehler als `[4, …]`: `NotImplemented` für eine unbekannte Action,
 `FormatViolation` für eine kaputte Nachricht oder fehlende Felder,
@@ -98,7 +100,8 @@ Fehler als `[4, …]`: `NotImplemented` für eine unbekannte Action,
   Client-Zertifikat und ssh. Nach einem Abbruch wird nach 3 s neu verbunden.
   `HangUp` legt auf. Die API dazu: `AskThePKI`, `SignCertificateAtThePKI`,
   `GetCACertificatesOfThePKI`, `GetCertificateStatusAtThePKI`,
-  `GetCRLOfThePKI`, `RevokeCertificateAtThePKI`, `PKIConnectionIsUp`,
+  `GetCRLOfThePKI`, `RevokeCertificateAtThePKI`, `GetOCSPResponseOfThePKI`,
+  `PKIConnectionIsUp`,
   `PKITransportOf`.
 - Test: `PKIMessagesTests` (Rahmen, Kanal, Ende, Typen).
 
@@ -201,7 +204,45 @@ Schlägt etwas fehl, steht der Eintrag auf `failed` mit Grund:
 - Die Weboberfläche des CSMS erklärt die neue Form der Adresse noch nicht.
 - Eine abgeschaltete Verbindung wird nicht getrennt, sie bekommt aber auf
   jede weitere Anfrage `SecurityError`.
-- `GetCertificateStatus` einer Station (OCSP) geht weiter an einen
-  OCSP-Responder über HTTP, nicht über die Verbindung.
 - Keine Server-Schlüsselerzeugung (`serverkeygen`) über die Nachrichten:
   ein privater Schlüssel geht nicht über diese Leitung.
+
+## 8. GetCertificateStatus der Ladestation über die Verbindung
+
+Stand 2026-11-23. Gebaut.
+
+**Nachricht.** `GetOCSPResponse` (Abschnitt 4) trägt eine OCSP-Anfrage nach
+RFC 6960 zur PKI und deren Antwort zurück, beide als DER in Base64. Die PKI
+beantwortet sie mit `PKIStore.AnswerOCSP`, genau wie `POST v1/pki/ocsp`.
+Die Antwort ist also vom OCSP-Responder der CA signiert, und Station und EV
+prüfen sie wie bisher. Hat die PKI die CA nicht, ist die Antwort `Rejected`
+mit `UnknownCA` (und der unsignierten Antwort `unauthorized`). Jede
+Registrierungsstelle darf fragen: Über HTTP ist der Responder ohnehin offen.
+
+**Ablauf im CSMS.** `GetCertificateStatus` der Station:
+
+1. Der CSMS baut die OCSP-Anfrage aus Hash-Algorithmus, Issuer-Hashes und
+   Seriennummer, wie bisher.
+2. Er fragt jede Verbindung, die `certificateSigning` nennt (jede URL nur
+   einmal), mit `GetOCSPResponse`. Welchen Responder die Station nennt,
+   spielt dabei keine Rolle: Gefragt wird die eigene PKI, nichts sonst.
+3. Die erste PKI, die die CA hat, liefert die Antwort. `UnknownCA` heißt:
+   die nächste Verbindung.
+4. Hat keine sie, geht es weiter wie bisher über HTTP an den Responder der
+   Station, wenn `MayAsk` das erlaubt. Sonst `Failed`: `refused`, oder
+   `failed` mit dem Grund, wenn eine Verbindung nicht gefragt werden konnte.
+
+Der Eintrag in `CertificateStatuses` hat jetzt `via`: die URL der
+Verbindung, über die gefragt wurde, oder null bei HTTP.
+
+**Tests**
+
+- WWCP_Node: `PKIMessagesTests.GetOCSPResponse_CarriesDERInBase64`.
+- Superprojekt, `CSMS_2_PKI` (jetzt 26 Tests):
+  - `Station_GetCertificateStatus_IsAnsweredByThePKI` über ws, wss und ssh.
+    Die Station nennt einen Responder, den der CSMS über HTTP nicht fragen
+    würde. Sie bekommt eine vom Responder der Sub-CA signierte Antwort:
+    `good`, und nach der Sperrung `revoked`. Der Eintrag nennt die
+    Verbindung als `via`.
+  - `Station_GetCertificateStatus_OfACAThePKIDoesNotHave_IsNotAsked`: eine
+    fremde CA, ein fremder Responder, also `Failed` und `refused`.

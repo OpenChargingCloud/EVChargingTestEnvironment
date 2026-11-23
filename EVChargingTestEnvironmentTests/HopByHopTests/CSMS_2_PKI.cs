@@ -39,6 +39,7 @@ using cloud.charging.open.protocols.WWCP.Node.Connections;
 
 using cloud.charging.open.PKI.Issuance;
 using cloud.charging.open.PKI.Enrollment;
+using cloud.charging.open.PKI.Revocation;
 
 using PKINode  = cloud.charging.open.PKI.PKI;
 
@@ -810,6 +811,141 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             Assert.That(csms.CertificateSignings.First().Certificate, Is.EqualTo(fingerprint));
 
         }
+
+        #endregion
+
+        #region Station_GetCertificateStatus_IsAnsweredByThePKI(Transport)
+
+        /// <summary>
+        /// A charging station asks the CSMS with GetCertificateStatus whether
+        /// its certificate is revoked; the CSMS asks the OCSP responder of the
+        /// PKI over its connection to it - a WebSocket or SSH -, though the
+        /// station names a responder the CSMS would not ask over HTTP, and hands
+        /// the signed answer back: good, and revoked once it is.
+        /// </summary>
+        [TestCase("ws")]
+        [TestCase("wss")]
+        [TestCase("ssh")]
+        public async Task Station_GetCertificateStatus_IsAnsweredByThePKI(String Transport)
+        {
+
+            var csms  = this.csms!;
+            var pki   = this.pki!;
+
+            var (_, connection, _) = await TheCSMSConnects(authPassword, Transport);
+
+            TheCSMSSignsAt(connection, StationLabel);
+
+            Assert.That(pki.Store.RefreshRevocation(), Is.Empty, "The PKI did not make the OCSP responder of its sub-CA.");
+
+            var stationId     = "cs-" + RandomExtensions.RandomString(6).ToLowerInvariant();
+            using var station = await AStation(stationId);
+
+            var signed        = await csms.SignCertificateAtThePKI(connection, new SignCertificateRequest(ACSR(stationId), StationLabel));
+            Assert.That(signed.Status, Is.EqualTo(PKIStatus.Accepted), $"The PKI did not sign: {signed.StatusInfo?.AdditionalInfo}{Story(csms, pki)}");
+
+            var chain         = new X509Certificate2Collection();
+            chain.ImportFromPem(signed.CertificateChain!);
+
+            using var leaf    = chain[0];
+            using var ca      = chain[1];
+            using var signer  = pki.Store.ResponderOf(subCA!.Id)!;
+            var url           = csms.Connections.Connections.First(entry => entry.Id == connection).URL.ToString().TrimEnd('/');
+
+            async Task<OCSPSingleResponse> Asked(String MessageId, String Expected)
+            {
+
+                await SendTo(station, AskedAbout(MessageId, leaf, ca, "http://ocsp.nowhere.example/"));
+
+                var answer = await ReceiveFrom(station);
+
+                Assert.That(answer[2]?["status"]?.Value<String>(), Is.EqualTo("Accepted"), $"{answer}{Story(csms, pki)}");
+                Assert.That(OCSP.TryParseResponse(Convert.FromBase64String(answer[2]!["ocspResult"]!.Value<String>()!), out var read, out var error), Is.True, error);
+
+                var entry = csms.CertificateStatuses.First();
+
+                Assert.Multiple(() => {
+                    Assert.That(read!.Status,            Is.EqualTo(OCSPResponseStatus.Successful));
+                    Assert.That(read.IsSignedBy(signer), Is.True, "The answer is not signed by the OCSP responder of the sub-CA.");
+                    Assert.That(read.Responses,          Has.Count.EqualTo(1));
+                    Assert.That(entry.Outcome,           Is.EqualTo(Expected));
+                    Assert.That(entry.Via,               Is.EqualTo(url), "The CSMS did not ask over its connection to the PKI.");
+                });
+
+                return read!.Responses[0];
+
+            }
+
+            Assert.That((await Asked("m1", "good")).Status, Is.EqualTo(OCSPCertStatus.Good));
+
+            var revoked = await csms.RevokeCertificateAtThePKI(connection, new RevokeCertificateRequest(SerialNumber: leaf.SerialNumber, Reason: "keyCompromise"));
+            Assert.That(revoked.Status, Is.EqualTo(PKIStatus.Accepted), revoked.StatusInfo?.AdditionalInfo);
+
+            Assert.That((await Asked("m2", "revoked")).Status, Is.EqualTo(OCSPCertStatus.Revoked));
+
+        }
+
+        #endregion
+
+        #region Station_GetCertificateStatus_OfACAThePKIDoesNotHave_IsNotAsked()
+
+        /// <summary>
+        /// Where the station asks about a certificate below a CA the PKI does
+        /// not have, and names a responder the CSMS does not ask over HTTP, it
+        /// is answered Failed: the CSMS asks nowhere else on a station's word.
+        /// </summary>
+        [Test]
+        public async Task Station_GetCertificateStatus_OfACAThePKIDoesNotHave_IsNotAsked()
+        {
+
+            var csms  = this.csms!;
+            var pki   = this.pki!;
+
+            var (_, connection, _) = await TheCSMSConnects(authPassword, "ws");
+
+            TheCSMSSignsAt(connection, StationLabel);
+
+            var stationId       = "cs-" + RandomExtensions.RandomString(6).ToLowerInvariant();
+            using var station   = await AStation(stationId);
+
+            using var key       = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+            using var stranger  = new CertificateRequest("CN=Someone else's CA", key, HashAlgorithmName.SHA256).CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(30));
+
+            await SendTo(station, AskedAbout("m1", stranger, stranger, "http://ocsp.nowhere.example/"));
+
+            var answer = await ReceiveFrom(station);
+
+            Assert.Multiple(() => {
+                Assert.That(answer[2]?["status"]?.Value<String>(),  Is.EqualTo("Failed"), answer.ToString());
+                Assert.That(csms.CertificateStatuses.First().Outcome, Is.EqualTo("refused"));
+                Assert.That(csms.CertificateStatuses.First().Via,     Is.Null);
+            });
+
+        }
+
+        #endregion
+
+        #region (private) AskedAbout(MessageId, Certificate, Issuer, Responder)
+
+        /// <summary>
+        /// The GetCertificateStatus of a station: whether the given certificate,
+        /// below the given CA, is revoked - asked of the given responder.
+        /// </summary>
+        private static JArray AskedAbout(String            MessageId,
+                                         X509Certificate2  Certificate,
+                                         X509Certificate2  Issuer,
+                                         String            Responder)
+
+            => new (2, MessageId, "GetCertificateStatus",
+                    new JObject(
+                        new JProperty("ocspRequestData", new JObject(
+                            new JProperty("hashAlgorithm",   "SHA256"),
+                            new JProperty("issuerNameHash",  Convert.ToHexString(SHA256.HashData(Issuer.SubjectName.RawData)).ToLowerInvariant()),
+                            new JProperty("issuerKeyHash",   Convert.ToHexString(SHA256.HashData(Issuer.PublicKey.EncodedKeyValue.RawData)).ToLowerInvariant()),
+                            new JProperty("serialNumber",    Certificate.SerialNumber),
+                            new JProperty("responderURL",    Responder)
+                        ))
+                    ));
 
         #endregion
 
