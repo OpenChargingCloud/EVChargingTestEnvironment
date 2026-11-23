@@ -354,6 +354,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
                    OCPPServingNode                        node   => node.WebSocketLogins,
                    EMSP.EMSP                              emsp   => emsp.WebSocketLogins,
                    EnergyMeters.ModbusTLS.ModbusTLSEnergyMeter  meter  => meter.WebSocketLogins,
+                   GridOperator.GridOperator              grid   => grid.WebSocketLogins,
+                   global::cloud.charging.open.PKI.PKI    pki    => pki.WebSocketLogins,
                    _                      => throw new ArgumentException($"'{Served.NodeNoun}' has no WebSocket logins these tests know.", nameof(Served))
                };
 
@@ -367,6 +369,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
                    OCPPServingNode                        node   => node.ClientTrust,
                    EMSP.EMSP                              emsp   => emsp.ClientTrust,
                    EnergyMeters.ModbusTLS.ModbusTLSEnergyMeter  meter  => meter.ClientTrust,
+                   GridOperator.GridOperator              grid   => grid.ClientTrust,
+                   global::cloud.charging.open.PKI.PKI    pki    => pki.ClientTrust,
                    _                      => throw new ArgumentException($"'{Served.NodeNoun}' accepts no client certificates these tests know.", nameof(Served))
                };
 
@@ -579,6 +583,10 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
                                                   Concat(emsp.OCPISshServers.SelectMany(server => server.ConnectedNetworkingNodeIds)),
                     EnergyMeters.ModbusTLS.ModbusTLSEnergyMeter meter
                                            => meter.MeterReadersIn.Select(cloud.charging.open.protocols.WWCP.NetworkingNode.NetworkingNode_Id.Parse),
+                    GridOperator.GridOperator grid
+                                           => grid.VENLoginsIn.Select(cloud.charging.open.protocols.WWCP.NetworkingNode.NetworkingNode_Id.Parse),
+                    global::cloud.charging.open.PKI.PKI pki
+                                           => pki.RALoginsIn.Select(cloud.charging.open.protocols.WWCP.NetworkingNode.NetworkingNode_Id.Parse),
                     _                      => []
                 }).
                 Any(networkingNodeId => networkingNodeId.ToString() == Login.ToString());
