@@ -29,6 +29,10 @@
     <Project Path="libs/DNSServer/DNSServer/DNSServer.csproj" />
     <Project Path="libs/DNSServer/DNSServerTests/DNSServerTests.csproj" />
   </Folder>
+  <Folder Name="/Dependencies/Entities/DownloadServer/">
+    <Project Path="libs/DownloadServer/DownloadServer/DownloadServer.csproj" />
+    <Project Path="libs/DownloadServer/DownloadServerTests/DownloadServerTests.csproj" />
+  </Folder>
   <Folder Name="/Dependencies/Entities/EMSP/">
     <Project Path="libs/EMSP/EMSP/EMSP.csproj" />
     <Project Path="libs/EMSP/EMSPTests/EMSPTests.csproj" />

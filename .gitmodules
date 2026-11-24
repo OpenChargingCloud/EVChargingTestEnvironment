@@ -82,3 +82,6 @@
 [submodule "libs/LogServer"]
 	path = libs/LogServer
 	url = https://github.com/OpenChargingCloud/LogServer.git
+[submodule "libs/DownloadServer"]
+	path = libs/DownloadServer
+	url = https://github.com/OpenChargingCloud/DownloadServer.git

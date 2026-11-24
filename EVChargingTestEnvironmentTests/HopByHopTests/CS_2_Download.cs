@@ -33,16 +33,17 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 {
 
     /// <summary>
-    /// A charging station fetches a firmware image from a firmware server when
-    /// its CSMS tells it to with an UpdateFirmware: with a GET over HTTP or
-    /// HTTPS - only from a server its configuration names for downloads,
-    /// taking up where an attempt stopped, and telling the CSMS how it went.
+    /// A charging station fetches a firmware image from the download server
+    /// when its CSMS tells it to with an UpdateFirmware: with a GET over HTTP
+    /// or HTTPS, or over SFTP - only from a server its configuration names for
+    /// downloads, taking up where an attempt stopped, taking no image larger
+    /// than it may hold, and telling the CSMS how it went.
     /// </summary>
     [TestFixture]
-    public class CS_2_Firmware : AToTheFirmwareServer
+    public class CS_2_Download : AToTheDownloadServer
     {
 
-        #region (protected override) NewNode(DNSClient) / NodeName
+        #region (protected override) NewNode(DNSClient) / NodeName / MaxDownloadSize
 
         /// <summary>
         /// A charging station of its own directory, known to its CSMS by its id.

@@ -1,8 +1,8 @@
 # Entwurf: GetLog über HTTP, HTTPS und SFTP zum Log-Server
 
 Stand 2026-11-24. Gilt für `CS_2_Log` und `LC_2_Log`. Gebaut, siehe Abschnitt 6.
-Dazu `UpdateFirmware` über HTTP und HTTPS (`CS_2_Firmware`, `LC_2_Firmware`),
-siehe Abschnitt 7.
+Dazu `UpdateFirmware` über HTTP, HTTPS und SFTP vom Download-Server
+(`CS_2_Download`, `LC_2_Download`), siehe Abschnitt 7.
 
 ## 1. Ziel
 
@@ -297,12 +297,13 @@ fehl (401 erwartet, 503 bekommen). Ursache ist WWCP_Node `168d938`
 - **Reste im Log-Server:** Eine `.part`-Datei, die nie umbenannt wird, bleibt
   in `.sftp-incoming` liegen.
 
-## 7. UpdateFirmware über HTTP und HTTPS
+## 7. UpdateFirmware über HTTP, HTTPS und SFTP vom Download-Server
 
 Die Gegenrichtung derselben Schicht. `FileTransfers.StartDownload` nahm nur
 `sftp://`, ein `UpdateFirmware` mit `http(s)://` ergab `NotSupported`. Jetzt
 holt der Knoten ein Firmware-Image mit `GET` von einem HTTP-Fileserver seiner
-Konfiguration.
+Konfiguration, oder über SFTP. Die Gegenstelle ist der Download-Server
+(`libs/DownloadServer`, 7.6), so wie der Log-Server die von `GetLog` ist.
 
 ### 7.1 Was über die Leitung geht
 
@@ -392,12 +393,21 @@ Wie groß ein Image höchstens sein darf, setzt jeder Knoten selbst, und
 - `MaxDownloadSize` als Konstante, beim Bau der `DeviceModelBridge` in
   `FileTransfers.MaxDownloadSize` gesetzt.
 
+**WWCP_Node, für den Download-Server**
+
+- `SftpArea.Downloaded` (`SftpAreaDownloaded`): Ein Bereich sagt seinem
+  Besitzer, wenn eine Datei über SFTP gelesen und geschlossen wurde, mit dem
+  ersten gelesenen Byte, der Zahl der Bytes und der Größe der Datei. Damit
+  zeichnet der Download-Server auch SFTP-Downloads auf, und ein fortgesetzter
+  Download sagt, ab wo er gelesen hat.
+
 **Superprojekt**
 
-- `AFileTransferTest`: was Log- und Firmware-Tests teilen. Das sind das CSMS,
+- `libs/DownloadServer` als Submodul, in der Solution und im Testprojekt.
+- `AFileTransferTest`: was Log- und Download-Tests teilen. Das sind das CSMS,
   der Knoten, der sich mit `ws://` und Passwort verbindet und angenommen wird,
-  `HoldsTheHTTPFileServers` und `ATestServer`. `AToTheLogServer` baut darauf
-  auf.
+  `HoldsTheHTTPFileServers` und `ATestServer`. `AToTheLogServer` und
+  `AToTheDownloadServer` bauen darauf auf.
 - Der Testserver heißt jetzt `TestFileServer` (vorher `HTTPLogServer`).
   Dazugekommen sind:
   - `GET` mit `Range`, also 206 und 416;
@@ -405,32 +415,49 @@ Wie groß ein Image höchstens sein darf, setzt jeder Knoten selbst, und
   - `IgnoresRange`: ein Server ohne Ranges;
   - bei `AnswerNext(302)` ein `Location` zu einem anderen Host;
   - `ClaimNextAs(…)`: ein `Content-Length`, das größer ist als die Datei.
-- `AToTheFirmwareServer.cs` enthält alle Fälle. `CS_2_Firmware.cs` und
-  `LC_2_Firmware.cs` erzeugen nur den Knoten.
+- `AToTheDownloadServer.cs` enthält alle Fälle. `CS_2_Download.cs` und
+  `LC_2_Download.cs` erzeugen nur den Knoten. Sie hießen vorher
+  `AToTheFirmwareServer`, `CS_2_Firmware` und `LC_2_Firmware`: Solange die
+  Gegenstelle nur der Testserver war, klang der Name nach einem
+  Firmware-Server, den es nicht gab. Jetzt heißen sie nach der Komponente am
+  anderen Ende, wie `CS_2_Log` nach dem Log-Server.
+- Wie bei den Log-Tests gehen die normalen Abläufe an den echten
+  Download-Server. Was ein echter Server nicht absichtlich tut (Abbruch mitten
+  im Body, 503, Redirect, eine falsche Länge, keine Ranges), macht der
+  `TestFileServer`.
 
 ### 7.4 Tests
 
-`CS_2_Firmware` und `LC_2_Firmware` je 11 Fälle, zusammen 22, alle grün. Mit
-`CS_2_Log` und `LC_2_Log` sind es 48.
+`CS_2_Download` und `LC_2_Download` je 17 Fälle, zusammen 34, alle grün. Mit
+`CS_2_Log` und `LC_2_Log` sind es 60.
 
-| Test | Was er zeigt |
-|---|---|
-| `HTTP_DownloadsAFirmwareImage` | Ein `GET` ohne Range und ohne Login. `Downloading`, `Downloaded`. Das Image liegt Byte für Byte im Staging-Verzeichnis |
-| `HTTPS_DownloadsAFirmwareImage_SigningInAsTheURLSays` | Server mit Basic Auth über TLS, geglaubt über die Test-CA. Login aus der URL, das Passwort nie im Log |
-| `HTTP_TakesUpWhereTheAttemptBeforeStopped` | Abbruch nach 100000 Bytes. Dann `DownloadPaused`, `Downloading` und `Range: bytes=100000-`, beantwortet mit 206. Das Image ist ganz |
-| `HTTP_AServerWithoutRanges_IsReadFromWhereItStopped` | Server ohne Ranges: zweimal 200. Der schon geholte Teil wird übergangen, nichts ist doppelt |
-| `HTTP_TriesAgain_AfterTheServerFailed` | 503, dann 200. `DownloadPaused` dazwischen |
-| `HTTP_AMissingImage_IsDownloadFailed` | 404: `DownloadFailed`, kein zweiter Versuch trotz `Retries: 3` |
-| `HTTP_AnImageLargerThanTheNodeTakes_IsDownloadFailed` | Der Server sagt ein Byte mehr als die Grenze des Knotens (256 MiB bzw. 1 GiB), ohne Konfiguration: `DownloadFailed` nach einer Anfrage trotz `Retries: 2`, nichts im Staging-Verzeichnis. Das Log nennt die Grenze |
-| `HTTP_ItsConfigurationSaysHowLargeAnImageMayBe` | `maxDownloadSize` genau so groß wie das Image: `Downloaded`. Ein Byte weniger: `DownloadFailed` nach einer Anfrage |
-| `HTTP_ARedirect_IsNotFollowed` | 302 zu einem anderen Host: `DownloadFailed`, eine Anfrage. Das Log sagt „is not followed“ |
-| `HTTPS_FetchesNothing_FromAServerItDoesNotBelieve` | Zertifikat nicht geglaubt: keine Anfrage, eine Verbindung, nichts im Staging-Verzeichnis |
-| `HTTP_RefusesWhatItsConfigurationDoesNotName` | Anderes Verzeichnis, anderer Port, Server nur für Uploads: `FileServerNotPermitted`. URL ohne Datei, Query: `InvalidURL`. `ftp://`: `NotSupported`. Kein Server wird erreicht, nichts wird gemeldet |
+| Test | Gegenstelle | Was er zeigt |
+|---|---|---|
+| `HTTP_DownloadsAFirmwareImage_SigningInAsItsConfigurationSays` | Download-Server | URL ohne Login, Zugangsdaten aus der Konfiguration. `Downloading`, `Downloaded`, das Image Byte für Byte im Staging-Verzeichnis. Der Server hat genau einen `GET` des ganzen Images durch den Downloader des Knotens aufgezeichnet |
+| `HTTPS_DownloadsAFirmwareImage_SigningInAsTheURLSays` | Download-Server, TLS | Login aus der URL, geglaubt über die Test-CA, das Passwort nie im Log |
+| `HTTP_DownloadsWithoutALogin_WhereTheDownloadServerTakesNone` | Download-Server, `anonymousHTTP` | Ohne Login geladen, aufgezeichnet als `anonymous` |
+| `HTTP_AWrongPassword_IsDownloadFailed` | Download-Server | 401: `DownloadFailed`, kein zweiter Versuch trotz `Retries: 3`, nichts geladen |
+| `HTTP_AMissingImage_IsDownloadFailed` | Download-Server | 404: `DownloadFailed`, genau eine abgewiesene Anfrage |
+| `HTTPS_FetchesNothing_FromAServerItDoesNotBelieve` | Download-Server, TLS | Zertifikat nicht geglaubt: keine Anfrage beim Server, genau ein `CertificateRefused`, nichts im Staging-Verzeichnis |
+| `HTTP_ItsConfigurationSaysHowLargeAnImageMayBe` | Download-Server | `maxDownloadSize` genau so groß wie das Image: `Downloaded`. Ein Byte weniger: `DownloadFailed` nach einer Anfrage |
+| `HTTP_RefusesWhatItsConfigurationDoesNotName` | Testserver | Anderes Verzeichnis, anderer Port, Server nur für Uploads: `FileServerNotPermitted`. URL ohne Datei, Query: `InvalidURL`. `ftp://`: `NotSupported`. Kein Server wird erreicht, nichts wird gemeldet |
+| `HTTP_AnImageLargerThanTheNodeTakes_IsDownloadFailed` | Testserver | Der Server sagt ein Byte mehr als die Grenze des Knotens (256 MiB bzw. 1 GiB): `DownloadFailed` nach einer Anfrage trotz `Retries: 2`. Das Log nennt die Grenze |
+| `HTTP_TakesUpWhereTheAttemptBeforeStopped` | Testserver | Abbruch nach 100000 Bytes. Dann `DownloadPaused`, `Downloading` und `Range: bytes=100000-`, beantwortet mit 206. Das Image ist ganz |
+| `HTTP_AServerWithoutRanges_IsReadFromWhereItStopped` | Testserver | Server ohne Ranges: zweimal 200. Der schon geholte Teil wird übergangen, nichts ist doppelt |
+| `HTTP_TriesAgain_AfterTheServerFailed` | Testserver | 503, dann 200. `DownloadPaused` dazwischen |
+| `HTTP_ARedirect_IsNotFollowed` | Testserver | 302 zu einem anderen Host: `DownloadFailed`, eine Anfrage. Das Log sagt „is not followed“ |
+| `SFTP_DownloadsAFirmwareImage` | Download-Server | Eigener Schlüssel, gepinnter Hostkey, `DownloadPaths: ["/firmware/"]`. Aufgezeichnet als SFTP-Download des ganzen Images ab Byte 0 |
+| `SFTP_RefusesWhatItsConfigurationDoesNotName` | Download-Server | `/logs/`, fremder Port, fremder Login: `FileServerNotPermitted`. Passwort in der URL: `InvalidURL`. Nichts geladen |
+| `SFTP_FetchesNothing_FromADownloadServerThatShowsAnotherHostKey` | Download-Server | Anderer Pin: `DownloadFailed`, genau ein `HostKeyRefused` trotz `Retries: 2` |
+| `SFTP_RefusesADownload_UntilItsKeyIsConfirmed` | Download-Server | Unbestätigter Schlüssel: `FileServerNotPermitted`. Nach `ConfirmFileTransferKey` wird geladen |
 
-Daneben grün: WWCP_Node `FileTransfer`/`Sftp` (51), WWCP_OCPP_Node
-`FileTransferBridgeTests` (14, darunter
-`TheMaxDownloadSize_IsItsConfigurations_OrElseTheNodes` für falsche Werte und
-Zahlen über `Int32`).
+Daneben grün:
+- WWCP_Node `FileTransfer`/`Sftp` (51), darin
+  `AFileIsDownloadedAndTakenUpWhereItStopped` mit dem neuen
+  `SftpArea.Downloaded`: ganzer Download ab Byte 0, Fortsetzung ab Byte 50000.
+- WWCP_OCPP_Node `FileTransferBridgeTests` (14).
+- DownloadServer (208): WWCP_Nodes Konformitäts-Suite und die eigenen Tests
+  (7.6).
 
 ### 7.5 Offen
 
@@ -446,5 +473,80 @@ Zahlen über `Int32`).
   erst beim Lesen. Das ist in WWCP_Node gebaut, aber ohne Test Ende zu Ende.
 - **`SignedUpdateFirmware` und `UpdateFirmware` von OCPP 1.6 über HTTP** laufen
   durch dasselbe `StartDownload`, haben aber keinen Test Ende zu Ende.
-- **Firmware über SFTP** hat im Superprojekt noch keinen Test wie
-  `CS_2_Firmware`. Die Bibliothek prüft es in `FileTransferBridgeTests`.
+- ~~**Firmware über SFTP** hat im Superprojekt noch keinen Test.~~ Erledigt,
+  siehe 7.4.
+- **Fortsetzen am echten Download-Server**: Der Abbruch mitten im Body geht
+  nur mit dem Testserver. Dass der Download-Server Ranges richtig beantwortet,
+  prüfen seine eigenen Tests.
+- Zum Download-Server selbst siehe 7.6.
+
+### 7.6 Der Download-Server
+
+`libs/DownloadServer` (`OpenChargingCloud/DownloadServer`) ist ein WWCP_Node
+wie der Log-Server, aber allgemein: Er bietet Dateien an, Firmware-Images
+zuerst, und alles andere, worauf Ladestationen und LocalController zeigen
+sollen.
+
+**Bereiche und Dateien**
+
+- Die Dateien liegen in Bereichen, je einem Verzeichnis unter `files/`. Der
+  Bereich ist der erste Teil des Pfads: `/firmware/station-2.1.0.bin`. Ohne
+  Konfiguration gibt es nur `firmware`. `logs` ist als Name vergeben, weil
+  jeder Knoten dort über SFTP seine Log-Dateien zeigt.
+- Angeboten wird, was auf der Platte liegt. Eine Datei, die jemand von Hand in
+  ihr Verzeichnis legt, ist sofort zu haben.
+- Veröffentlicht wird über SFTP, über die Web-Oberfläche oder
+  `PUT /api/v1/downloadServer/files/{area}/{name}`, oder durch Ablegen im
+  Verzeichnis. Über API und SFTP wird erst unter verstecktem Namen geschrieben
+  und dann umbenannt, damit niemand eine halbe Datei lädt.
+- `SHA-256` jeder Datei wird gemerkt und neu gerechnet, wenn sich Größe oder
+  Schreibzeit ändern. Er ist auch das `ETag`.
+
+**Downloads**
+
+| Weg | Was |
+|---|---|
+| HTTP | `GET /<Bereich>/<Datei>` auf Port 8365, als `downloader` mit Basic Auth, oder ohne Login bei `"anonymousHTTP": true`. Ein Byte-Bereich pro Anfrage (206), 416 hinter dem Ende, mehrere Bereiche oder ein nicht passendes `If-Range` ergeben die ganze Datei. `HEAD`. HTTPS mit dem Zertifikat der Web-Oberfläche. Kein `PUT`, nichts sonst |
+| SFTP | `/<Bereich>/<Datei>` auf dem SSH-Server (22365), als `downloader` mit eigenem Schlüssel oder Passwort |
+
+Jeder Download wird in `files/downloads.jsonl` aufgezeichnet: wer, welche
+Datei, ab welchem Byte, wie viele Bytes, wie groß die Datei war, von wo.
+Abgewiesene Anfragen (401, 403, 404) werden nur gezählt.
+
+**Konfiguration** (`downloadServer`): `directory`, `areas`, `http`,
+`httpListen`, `httpPort`, `anonymousHTTP`, `sftp`, `maxFileSize`. Die
+Web-Oberfläche liegt auf 2365, weil 2363 der Log-Server und 2364 der
+Registrierungsstelle der PKI gehört.
+
+**Rollen**: `downloader` lädt und sieht sonst nichts. `publisher` sieht,
+veröffentlicht und entfernt Dateien. `operator` sieht alles und
+veröffentlicht, legt aber keine Downloader an.
+
+**Was es sonst hat**: JSON-API unter `/api/v1/downloadServer`, Befehle
+`downloadServer`, `files`, `downloads` und `downloaders` über SSH, und eine
+Web-Oberfläche mit den Seiten Files, Downloads, Download server und
+Downloaders.
+
+**Tests** (208, alle grün): WWCP_Nodes Konformitäts-Suite, dazu Download
+ganz, ab einem Byte, die letzten Bytes, ein Bereich in der Mitte, 416, `HEAD`,
+mehrere Bereiche, fremdes `If-Range`, die Aufzeichnung mit erstem Byte; 401,
+403 und 404 (auch versteckte Dateien und Wege aus dem Bereich hinaus), kein
+`PUT`; Veröffentlichen und Entfernen als `publisher`; neues Passwort und
+entfernter Downloader; die Einstellungen; die Auswertung von `Range`; die
+Aufzeichnung über einen Neustart; anonyme Downloads; was eine abgebrochene
+Veröffentlichung hinterließ. Dazu 62 Seitentests der Web-Oberfläche.
+
+**Offen**
+
+- **Über die Web-Oberfläche** nimmt der HTTP-Server eines Knotens höchstens
+  8 MiB in einer Anfrage. Größere Images gehen über SFTP oder ins Verzeichnis.
+  Die Seite sagt das und prüft die Größe vor dem Senden.
+- **Die Aufzeichnung über HTTP** zählt die Bytes, die die Antwort trägt, nicht
+  die, die wirklich angekommen sind. Bricht der Client ab, steht trotzdem die
+  volle Zahl da. Über SFTP zählen die gelesenen Bytes.
+- **Ein Programm** wie `LogServerCLI`, das den Download-Server allein startet,
+  gibt es noch nicht.
+- **Die Web-Oberfläche** ist gebaut, eingebettet und von den Seitentests
+  geprüft, aber nicht in einem Browser angesehen.
+- **Bereiche** sind flach, wie die Bereiche von SFTP. Unterverzeichnisse gibt
+  es nicht; Versionen stehen im Dateinamen.

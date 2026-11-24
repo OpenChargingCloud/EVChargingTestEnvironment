@@ -33,17 +33,18 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 {
 
     /// <summary>
-    /// A local controller fetches a firmware image for itself from a firmware
-    /// server when its CSMS tells it - and not a station behind it - with an
-    /// UpdateFirmware: with a GET over HTTP or HTTPS, only from a server its
-    /// configuration names for downloads, taking up where an attempt stopped,
-    /// and telling the CSMS how it went.
+    /// A local controller fetches a firmware image for itself from the
+    /// download server when its CSMS tells it - and not a station behind it -
+    /// with an UpdateFirmware: with a GET over HTTP or HTTPS, or over SFTP -
+    /// only from a server its configuration names for downloads, taking up
+    /// where an attempt stopped, taking no image larger than it may hold, and
+    /// telling the CSMS how it went.
     /// </summary>
     [TestFixture]
-    public class LC_2_Firmware : AToTheFirmwareServer
+    public class LC_2_Download : AToTheDownloadServer
     {
 
-        #region (protected override) NewNode(DNSClient) / NodeName / BeforeConnecting(CSMS, Login)
+        #region (protected override) NewNode(DNSClient) / NodeName / MaxDownloadSize / BeforeConnecting(CSMS, Login)
 
         /// <summary>
         /// A local controller of its own directory, reporting upwards, known to
