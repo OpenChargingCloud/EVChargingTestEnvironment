@@ -73,7 +73,8 @@ Das Verzeichnis ist der Pfad der URL. Die Antwort zählt so:
 | Zertifikat nicht geglaubt | `CertificateRefused` | `UploadFailure` | nein |
 | keine Verbindung, Leerlauf | `Unreachable` | `UploadFailure` | ja |
 
-- **Weiterleitungen** werden nicht verfolgt.
+- **Weiterleitungen** werden bei einem Upload nicht verfolgt. Ein Download
+  folgt ihnen unter Bedingungen, siehe 7.1.
 - **Cookies** werden nicht gespeichert.
 - **Namen** löst der DNS-Client des Knotens auf (`NameResolution.HTTPHandler`).
 - **Server über HTTPS** prüft der Knoten wie den Server einer `wss://`-Verbindung.
@@ -92,9 +93,19 @@ Unverändert nach dem Whitepaper, nur jetzt zum Log-Server:
 
 ### 4.3 Die Datei
 
-`NodeLogFiles` liefert die Einträge des Event-Logs des Knotens aus der
-angefragten Zeit, ein JSON-Objekt je Zeile.
+`NodeLogFiles` liefert die Einträge des Knotens aus der angefragten Zeit, ein
+JSON-Objekt je Zeile, die ältesten zuerst.
 
+- **Woher:** Schreibt der Knoten Log-Dateien (`LogPath`, eine Datei je Tag),
+  liest es die Dateien der angefragten Tage, so weit sie zurückreichen.
+  Schreibt er keine, liefert es, was das Event-Log im Speicher hält (die
+  letzten 2000 Einträge). Eine Zeile aus einer Datei hat kein `id`, weil die
+  Datei keins kennt.
+- **Wie viel:** höchstens 64 MiB (`NodeLogFiles.MaxBytes`), unter den 100 MiB,
+  die der Log-Server annimmt. Steckt in der angefragten Zeit mehr, gehen die
+  neuesten Einträge mit, und die erste Zeile sagt, wie viele ältere fehlen.
+- **Unterwegs** liegt die Datei in einer temporären Datei, die nach dem Upload
+  verschwindet (`DeleteOnClose`).
 - `DiagnosticsLog` (und `Diagnostics` von OCPP 1.6) enthält alle Einträge.
 - `SecurityLog` enthält die Einträge mit dem Tag `security`.
 - `DataCollectorLog` führt der Knoten nicht und antwortet `NothingToSend`.
@@ -234,11 +245,13 @@ nahm `<name>.part` sofort in seinen Store. Das Umbenennen fand nichts mehr
 
 ### 6.2 Tests
 
-`CS_2_Log` und `LC_2_Log` je 13 Fälle, zusammen 26, alle grün.
+`CS_2_Log` und `LC_2_Log` je 14 Fälle, zusammen 28, alle grün. Die Knoten
+schreiben dabei Log-Dateien, wie im Betrieb.
 
 | Test | Gegen | Was er zeigt |
 |---|---|---|
 | `HTTP_UploadsItsLog` | Log-Server | Zugangsdaten in der URL. `Uploading`, `Uploaded`. Beim Log-Server als HTTP-Upload des Uploaders und der Station. Das Log sagt, dass der Knoten gefragt wurde. Warnung „in the clear“, Passwort nie im Log |
+| `HTTP_UploadsItsLogFiles_OfTheTimeAskedFor` | Log-Server | Eine Tagesdatei von vor diesem Start: ohne Zeitraum am Anfang des Uploads, mit einem Zeitraum der letzten Stunde nicht. Ein `SecurityLog` jenes Tages enthält genau dessen Eintrag mit `security` |
 | `HTTPS_UploadsItsLog_SigningInAsItsConfigurationSays` | Log-Server, TLS | URL ohne Login, Zugangsdaten aus der Konfiguration. Server geglaubt über die Test-CA. Keine Klartext-Warnung |
 | `HTTP_TheLoginOfTheURL_GoesBeforeThatOfItsConfiguration` | Log-Server | Falsches Passwort in der Konfiguration. Das der URL lädt hoch. Ohne URL-Login 401, also `PermissionDenied`, ohne zweiten Versuch |
 | `HTTPS_SendsNothing_ToALogServerItDoesNotBelieve` | Log-Server, TLS | Test-CA nicht geglaubt: `UploadFailure`, kein Upload, genau ein `CertificateRefused` trotz `Retries: 3` |
@@ -283,10 +296,11 @@ fehl (401 erwartet, 503 bekommen). Ursache ist WWCP_Node `168d938`
   Das Passwort steht im Klartext in der Konfiguration.
 - **Ob die GetLog-URL mit Passwort in einem Nachrichten-Log von OCPP landet**
   (Debug-Log, HTTP-SSE der Knoten), ist nicht geprüft.
-- **Das Log ist nur das Event-Log im Speicher**, standardmäßig die letzten
-  2000 Einträge (`EventLog.DefaultCapacity`).
-  Die Logdateien auf der Platte (`LogPath`) werden nicht gelesen, auch kein
-  Archiv mehrerer Dateien.
+- ~~**Das Log ist nur das Event-Log im Speicher.**~~ Erledigt, siehe 4.3: Wo der
+  Knoten Log-Dateien schreibt, werden sie gelesen. Was die Dateien nicht haben,
+  fehlt auch im Upload: die Nummer und die `data` eines Eintrags. Eine Meldung
+  ohne Tags, die mit einer Klammer aus Kleinbuchstaben beginnt, wird als Tags
+  gelesen.
 - **`InvalidFileServerCertificate` beim CSMS** ist nicht Ende zu Ende geprüft.
   Die Tests sehen nur das Log des Knotens. Beim LC hängt das Melden an
   `csms.url`, nicht an den Verbindungen.
@@ -310,21 +324,39 @@ Konfiguration, oder über SFTP. Die Gegenstelle ist der Download-Server
 ```
 GET /<Pfad>/<Datei> HTTP/1.1
 Range: bytes=<Offset>-                    (ab dem zweiten Versuch, wenn schon etwas da ist)
+If-Range: <ETag oder Datum>               (dazu, wenn der Versuch davor eins erfahren hat)
 Authorization: Basic <login:passwort>     (falls es welche gibt)
 User-Agent: WWCP-Node/1.0
 ```
 
 | Antwort | Ergebnis | Neuer Versuch |
 |---|---|---|
-| 200 | `Done`. War schon etwas da, werden die ersten `Offset` Bytes übergangen | – |
+| 200 mit demselben Validator | `Done`. War schon etwas da, werden die ersten `Offset` Bytes übergangen | – |
+| 200 mit anderem oder ohne Validator, wo der Versuch davor einen hatte | Die Datei hat sich geändert: Das Angefangene wird abgeschnitten, die Antwort ist die neue Datei ab Byte 0. Lässt sich das Ziel nicht kürzen: `Changed` | bei `Changed` ja, von vorn |
 | 206 mit `Content-Range` ab `Offset` | `Done`, angehängt | – |
 | 206 ab einem anderen Byte | `RejectedByServer` | nein |
 | 416 mit `Content-Range: bytes */<Offset>` | `Done`: es fehlte nichts mehr | – |
 | Body bricht ab | `Unreachable` | ja, ab dem erreichten Byte |
 | 404, 410 | `NoSuchFile` | nein |
-| Weiterleitung (3xx) | `RejectedByServer`: wird nicht verfolgt | nein |
+| 301, 302, 303, 307, 308 zu einer Datei eines HTTP-Fileservers der Konfiguration für Downloads | gefolgt, höchstens 5-mal | – |
+| eine solche Weiterleitung anderswohin, von https zu http, oder die sechste | `RejectedByServer` | nein |
 | größer als `MaxDownloadSize` (laut `Content-Length` oder `Content-Range`, sonst beim Lesen) | `TooLarge` | nein |
 | sonst | wie beim Upload (4.1) | wie beim Upload |
+
+**Der Validator** ist das starke ETag der ersten Antwort, sonst ihr
+`Last-Modified`. `FileTransfers` reicht ihn von Versuch zu Versuch weiter
+(`FileTransferResult.Validator`). Die angefangene Datei öffnet es dafür nicht
+mehr zum Anhängen, sondern an ihrem Ende, damit sie gekürzt werden kann.
+
+**Eine Weiterleitung** wird geprüft wie die URL einer Anfrage: Sie muss in
+einem Verzeichnis eines HTTP-Fileservers der Konfiguration liegen, der
+Downloads darf, und eine Datei nennen. Anders als bei einer Anfrage darf sie
+eine Query tragen, so wie die signierte URL eines CDN. Ist das Ziel nicht
+erlaubt, sagt das Log warum, und ein `FileServerNotPermitted` geht als
+Sicherheitsereignis an das CSMS. Der Login der Original-URL geht nur an
+denselben Server (Schema, Host, Port) mit. Jeder andere Server bekommt den
+Login, den die Konfiguration für ihn nennt. Das Zertifikat wird für den Server
+des jeweiligen Sprungs geprüft.
 
 Dem CSMS gemeldet wird wie über SFTP: `Downloading`, bei jedem neuen Versuch
 `DownloadPaused` und wieder `Downloading`, am Ende `Downloaded` oder
@@ -373,10 +405,17 @@ Wie groß ein Image höchstens sein darf, setzt jeder Knoten selbst, und
 - `HTTPFileServer` hat `Directions`, `Ways`, `Allows(Direction)` und
   `AllowsPath(Direction, …)` statt `AllowsDirectory`.
 - `JudgeHTTPFileTransfer(URL, Direction)` und `FileNameOf(Uri)`.
-- `DownloadFileOverHTTPAsync(URL, Destination, Offset, MaxSize, …)`.
+- `DownloadFileOverHTTPAsync(URL, Destination, Offset, MaxSize, Validator, …)`:
+  mit `If-Range`, dem Neubeginn einer geänderten Datei und Weiterleitungen
+  (`MaxHTTPRedirects` = 5). Dazu `FileTransferResult.Validator` und das
+  Ergebnis `FileTransferOutcome.Changed`.
 - Upload und Download teilen sich die Anmeldung (`SignIn`), die Wertung der
   Antworten (`Failed`) sowie Client, Zertifikatsprüfung, Leerlauf und
-  Fehlerbehandlung (`TransferOverHTTP`).
+  Fehlerbehandlung (`TransferOverHTTP`). Zertifikat und Meldungen gelten dem
+  Server des jeweiligen Sprungs.
+- `FileLog.FilesIn(…)`, `FileLog.Read(…)` und `FileLog.TryParseLine(…)`: Der
+  Schreiber der Log-Dateien liest sie auch zurück. So kennt nur eine Stelle das
+  Format.
 
 **WWCP_OCPP**
 
@@ -387,6 +426,9 @@ Wie groß ein Image höchstens sein darf, setzt jeder Knoten selbst, und
   wieder über den richtigen Weg geurteilt.
 - `FileTransfers.TheMaxDownloadSize`: `maxDownloadSize` der Konfiguration,
   sonst `MaxDownloadSize` des Knotens (`MaxDownloadSizeKey`).
+- `FileTransfers` reicht den Validator von Versuch zu Versuch weiter und
+  öffnet die angefangene Datei an ihrem Ende statt zum Anhängen.
+- `NodeLogFiles` liest die Log-Dateien des Knotens, siehe 4.3.
 
 **ChargingStation und LocalController**
 
@@ -414,7 +456,12 @@ Wie groß ein Image höchstens sein darf, setzt jeder Knoten selbst, und
   - `BreakNextAfter(…)`: bricht den Body nach N Bytes ab;
   - `IgnoresRange`: ein Server ohne Ranges;
   - bei `AnswerNext(302)` ein `Location` zu einem anderen Host;
-  - `ClaimNextAs(…)`: ein `Content-Length`, das größer ist als die Datei.
+  - `ClaimNextAs(…)`: ein `Content-Length`, das größer ist als die Datei;
+  - ein `ETag` (SHA-256 der Datei) und `If-Range`;
+  - `RedirectNextTo(…)`: eine Weiterleitung, wohin der Test sagt;
+  - `ReplaceAfterNext(…)`: eine andere Datei an ihrer Stelle, sobald sie
+    ausgeliefert ist.
+- `CS_2_Log` und `LC_2_Log` geben ihren Knoten einen `LogPath`.
 - `AToTheDownloadServer.cs` enthält alle Fälle. `CS_2_Download.cs` und
   `LC_2_Download.cs` erzeugen nur den Knoten. Sie hießen vorher
   `AToTheFirmwareServer`, `CS_2_Firmware` und `LC_2_Firmware`: Solange die
@@ -428,8 +475,8 @@ Wie groß ein Image höchstens sein darf, setzt jeder Knoten selbst, und
 
 ### 7.4 Tests
 
-`CS_2_Download` und `LC_2_Download` je 17 Fälle, zusammen 34, alle grün. Mit
-`CS_2_Log` und `LC_2_Log` sind es 60.
+`CS_2_Download` und `LC_2_Download` je 21 Fälle, zusammen 42, alle grün. Mit
+`CS_2_Log` und `LC_2_Log` sind es 70.
 
 | Test | Gegenstelle | Was er zeigt |
 |---|---|---|
@@ -442,31 +489,42 @@ Wie groß ein Image höchstens sein darf, setzt jeder Knoten selbst, und
 | `HTTP_ItsConfigurationSaysHowLargeAnImageMayBe` | Download-Server | `maxDownloadSize` genau so groß wie das Image: `Downloaded`. Ein Byte weniger: `DownloadFailed` nach einer Anfrage |
 | `HTTP_RefusesWhatItsConfigurationDoesNotName` | Testserver | Anderes Verzeichnis, anderer Port, Server nur für Uploads: `FileServerNotPermitted`. URL ohne Datei, Query: `InvalidURL`. `ftp://`: `NotSupported`. Kein Server wird erreicht, nichts wird gemeldet |
 | `HTTP_AnImageLargerThanTheNodeTakes_IsDownloadFailed` | Testserver | Der Server sagt ein Byte mehr als die Grenze des Knotens (256 MiB bzw. 1 GiB): `DownloadFailed` nach einer Anfrage trotz `Retries: 2`. Das Log nennt die Grenze |
-| `HTTP_TakesUpWhereTheAttemptBeforeStopped` | Testserver | Abbruch nach 100000 Bytes. Dann `DownloadPaused`, `Downloading` und `Range: bytes=100000-`, beantwortet mit 206. Das Image ist ganz |
-| `HTTP_AServerWithoutRanges_IsReadFromWhereItStopped` | Testserver | Server ohne Ranges: zweimal 200. Der schon geholte Teil wird übergangen, nichts ist doppelt |
+| `HTTP_TakesUpWhereTheAttemptBeforeStopped` | Testserver | Abbruch nach 100000 Bytes. Dann `DownloadPaused`, `Downloading` und `Range: bytes=100000-` mit `If-Range` des ersten ETags, beantwortet mit 206. Das Image ist ganz |
+| `HTTP_AServerWithoutRanges_IsReadFromWhereItStopped` | Testserver | Server ohne Ranges: zweimal 200 mit demselben ETag. Der schon geholte Teil wird übergangen, nichts ist doppelt |
+| `HTTP_AnImageChangedMeanwhile_IsFetchedAnewFromItsStart` | Testserver | Abbruch nach 100000 Bytes, dann ein anderes Image an seiner Stelle. Die Fortsetzung nennt das erste ETag, der Server schickt das neue ganz (200). Der Knoten behält genau das neue, nichts vom ersten. Das Log sagt, dass es sich geändert hat |
 | `HTTP_TriesAgain_AfterTheServerFailed` | Testserver | 503, dann 200. `DownloadPaused` dazwischen |
-| `HTTP_ARedirect_IsNotFollowed` | Testserver | 302 zu einem anderen Host: `DownloadFailed`, eine Anfrage. Das Log sagt „is not followed“ |
+| `HTTP_ARedirectToAServerItsConfigurationNames_IsFollowed_SigningInThereAsItsConfigurationSays` | Testserver und Download-Server | Der Testserver (Login aus der URL) leitet mit 302 und Query auf den Download-Server weiter. Gefolgt, dort angemeldet mit dem Login der Konfiguration, keine abgewiesene Anfrage dort. Das Log sagt, wohin |
+| `HTTP_ARedirectFromHTTPSToHTTP_IsNotFollowed` | Testserver (TLS) und Download-Server | Weiterleitung von https zu http, beide erlaubt: nicht gefolgt, `DownloadFailed`, nichts geladen |
+| `HTTP_RedirectsWithoutEnd_AreFollowedFiveTimes` | Testserver | Weiterleitung auf sich selbst ohne Ende: 5 gefolgt, die sechste nicht, `DownloadFailed` |
+| `HTTP_ARedirectToAServerItsConfigurationDoesNotName_IsNotFollowed` | Testserver | 302 zu einem anderen Host: `DownloadFailed`, eine Anfrage. Das Log sagt „is not followed“ |
 | `SFTP_DownloadsAFirmwareImage` | Download-Server | Eigener Schlüssel, gepinnter Hostkey, `DownloadPaths: ["/firmware/"]`. Aufgezeichnet als SFTP-Download des ganzen Images ab Byte 0 |
 | `SFTP_RefusesWhatItsConfigurationDoesNotName` | Download-Server | `/logs/`, fremder Port, fremder Login: `FileServerNotPermitted`. Passwort in der URL: `InvalidURL`. Nichts geladen |
 | `SFTP_FetchesNothing_FromADownloadServerThatShowsAnotherHostKey` | Download-Server | Anderer Pin: `DownloadFailed`, genau ein `HostKeyRefused` trotz `Retries: 2` |
 | `SFTP_RefusesADownload_UntilItsKeyIsConfirmed` | Download-Server | Unbestätigter Schlüssel: `FileServerNotPermitted`. Nach `ConfirmFileTransferKey` wird geladen |
 
 Daneben grün:
-- WWCP_Node `FileTransfer`/`Sftp` (51), darin
+- WWCP_Node `FileTransfer`/`Sftp`/`FileLog`/`EventLog` (80), darin
   `AFileIsDownloadedAndTakenUpWhereItStopped` mit dem neuen
-  `SftpArea.Downloaded`: ganzer Download ab Byte 0, Fortsetzung ab Byte 50000.
-- WWCP_OCPP_Node `FileTransferBridgeTests` (14).
+  `SftpArea.Downloaded` (ganzer Download ab Byte 0, Fortsetzung ab Byte 50000)
+  und `WhatIsWrittenIsReadBack_ByTheDaysAskedFor` für das Zurücklesen der
+  Log-Dateien.
+- WWCP_OCPP_Node `FileTransferBridgeTests` und `NodeLogFilesTests` (17): die
+  Dateien mehrerer Tage, der Zeitraum auf die Millisekunde, `SecurityLog`, die
+  Obergrenze mit der Zeile über das Ausgelassene, und ohne Log-Dateien das
+  Event-Log.
+- LocalController `SignaturePolicyTests`, `StationRequestGateTests` (19).
 - DownloadServer (208): WWCP_Nodes Konformitäts-Suite und die eigenen Tests
   (7.6).
 
 ### 7.5 Offen
 
-- **Weiterleitungen** werden nie verfolgt, auch nicht zu einem Server, den die
-  Konfiguration nennt. Firmware hinter einem CDN mit Redirect lädt so nicht.
-- **Ein Server ohne Ranges** liefert ab dem zweiten Versuch alles von vorn.
-  Der Knoten übergeht den Teil, den er schon hat, prüft aber nicht, ob es noch
-  dieselbe Datei ist (kein `If-Range` mit ETag). Ob das Image echt ist,
-  entscheidet erst die Signatur danach.
+- ~~**Weiterleitungen** werden nie verfolgt.~~ Erledigt, siehe 7.1: gefolgt zu
+  Servern, die die Konfiguration für Downloads nennt. Ein CDN muss also mit
+  seinem Host in `httpFileServers` stehen.
+- ~~**Ein Server ohne Ranges** wird nicht gefragt, ob es noch dieselbe Datei
+  ist.~~ Erledigt, siehe 7.1: `If-Range`, und eine geänderte Datei wird von
+  vorn gelesen. Ein Server, der weder ETag noch `Last-Modified` schickt, wird
+  weiter nicht gefragt. Über SFTP gibt es keinen Validator.
 - ~~**`FileTransfers.MaxDownloadSize`** setzt bei CS und LC nichts.~~ Erledigt,
   siehe 7.2. Noch offen: Das CSMS kann die Grenze nicht lesen, es gibt keine
   Variable im Device Model. Ohne `Content-Length` (chunked) greift die Prüfung

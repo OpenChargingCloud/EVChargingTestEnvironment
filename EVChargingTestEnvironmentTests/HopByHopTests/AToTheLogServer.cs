@@ -245,10 +245,12 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         /// The CSMS asks the node for its log, to be put at the given location:
         /// the response, and the id of the request its notifications carry.
         /// </summary>
-        protected async Task<(GetLogResponse Response, Int32 RequestId)> GetLog(String     Location,
-                                                                                 LogType?   LogType        = null,
-                                                                                 Byte?      Retries        = null,
-                                                                                 TimeSpan?  RetryInterval  = null)
+        protected async Task<(GetLogResponse Response, Int32 RequestId)> GetLog(String           Location,
+                                                                                 LogType?         LogType        = null,
+                                                                                 Byte?            Retries        = null,
+                                                                                 TimeSpan?        RetryInterval  = null,
+                                                                                 DateTimeOffset?  Oldest         = null,
+                                                                                 DateTimeOffset?  Latest         = null)
         {
 
             var requestId = Interlocked.Increment(ref requestIds);
@@ -257,7 +259,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
                                       SourceRouting.To(NetworkingNode_Id.Parse(login.ToString())),
                                       requestId,
                                       LogType ?? protocols.OCPPv2_1.LogType.DiagnosticsLog,
-                                      new LogParameters(URL.Parse(Location)),
+                                      new LogParameters(URL.Parse(Location), Oldest, Latest),
                                       Retries,
                                       RetryInterval ?? TimeSpan.FromMilliseconds(500)
                                   );
@@ -404,6 +406,70 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
                             Has.Some.Contains("crosses the network in the clear"),              "The node does not say that its password went over http://.");
                 Assert.That(uploader!.Log.Recent(500).Select(entry => entry.Message),
                             Has.None.Contains(uploaderPassword),                                "The node logged the password of the URL.");
+
+            });
+
+        }
+
+        #endregion
+
+        #region HTTP_UploadsItsLogFiles_OfTheTimeAskedFor()
+
+        /// <summary>
+        /// The node writes its log to files, one a day: a GetLog uploads them,
+        /// and not only what its event log keeps in memory - a day before this
+        /// start as well, where the time asked for reaches back to it, and not
+        /// where it does not.
+        /// </summary>
+        [Test]
+        public async Task HTTP_UploadsItsLogFiles_OfTheTimeAskedFor()
+        {
+
+            await ALogServer();
+
+            HoldsTheHTTPFileServers(TheLogServer());
+
+            Assert.That(uploader!.LogPath, Is.Not.Null, "The node writes no log files.");
+
+            File.WriteAllLines(Path.Combine(uploader.LogPath!, $"{uploader.Kind.LogFilePrefix}-2026-11-20.log"),
+                               [ "2026-11-20T08:00:00.000Z info    [boot] Started four days before this test was written.",
+                                 "2026-11-20T09:15:00.000Z warning [security auth] A login refused that day." ]);
+
+            // One after the other: a GetLog takes the place of one still running.
+            async Task<GetLogResponse> Uploaded(LogType? Kind = null, DateTimeOffset? Oldest = null, DateTimeOffset? Latest = null)
+            {
+
+                var (response, requestId) = await GetLog(LogServerURL(Identity, uploaderPassword), LogType: Kind, Oldest: Oldest, Latest: Latest);
+
+                Accepted(response);
+
+                Assert.That(await UntilTold(requestId), Is.EqualTo(UploadLogStatus.Uploaded), $"The log was not uploaded.{Story(uploader, logServer, csms)}");
+
+                return response;
+
+            }
+
+            var whole    = await Uploaded();
+            var recent   = await Uploaded(Oldest: DateTimeOffset.UtcNow.AddHours(-1));
+            var thatDay  = await Uploaded(protocols.OCPPv2_1.LogType.SecurityLog,
+                                          Oldest: new DateTimeOffset(2026, 11, 20, 0, 0, 0, TimeSpan.Zero),
+                                          Latest: new DateTimeOffset(2026, 11, 20, 23, 59, 59, TimeSpan.Zero));
+
+            var wholeLines    = LinesOf(TheUpload(whole)). Select(line => line["message"]?.Value<String>()).ToArray();
+            var recentLines   = LinesOf(TheUpload(recent)).Select(line => line["message"]?.Value<String>()).ToArray();
+            var thatDayLines  = LinesOf(TheUpload(thatDay)).Select(line => line["message"]?.Value<String>()).ToArray();
+
+            Assert.Multiple(() => {
+
+                Assert.That(wholeLines.Take(2),    Is.EqualTo(new[] { "Started four days before this test was written.", "A login refused that day." }),
+                                                                                                "The day before this start is not where the log begins.");
+                Assert.That(wholeLines,            Has.Some.Contains("DiagnosticsLog"),          "What the node logged now is not in it.");
+
+                Assert.That(recentLines,           Has.None.Contains("four days before"),        "A day before the time asked for is in it.");
+                Assert.That(recentLines,           Has.Some.Contains("DiagnosticsLog"));
+
+                Assert.That(thatDayLines,          Is.EqualTo(new[] { "A login refused that day." }),
+                                                                                                "Not the security entries of the day asked for, and nothing else.");
 
             });
 

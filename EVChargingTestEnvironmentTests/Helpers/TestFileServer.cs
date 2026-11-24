@@ -36,10 +36,13 @@ namespace cloud.charging.open.TestEnvironment.Tests
     /// A file server of the test's own: HTTP/1.1, or HTTPS with a certificate
     /// it is given. It takes a file with a PUT and writes nothing over - with
     /// "If-None-Match: *" a file that is there is answered 412 -, and serves
-    /// a file with a GET, from a byte on where a Range asks so (206). It may
-    /// ask for HTTP Basic authentication, may be told to answer the next
-    /// requests with a status of the test's choosing, to break off a GET after
-    /// some bytes, to claim a file larger than it is, and to pass over a Range.
+    /// a file with a GET, from a byte on where a Range asks so (206) - and an
+    /// If-Range, where there is one, names the file as it is: its ETag, the
+    /// SHA-256 of what it holds. It may ask for HTTP Basic authentication, may
+    /// be told to answer the next requests with a status of the test's
+    /// choosing or with a redirect to where the test says, to break off a GET
+    /// after some bytes, to claim a file larger than it is, to pass over a
+    /// Range, and to put another file in the place of one once it served it.
     /// </summary>
     /// <remarks>
     /// One request per connection, as the node's transfers make one request
@@ -70,6 +73,8 @@ namespace cloud.charging.open.TestEnvironment.Tests
         private readonly ConcurrentQueue<Int32>           answers    = new();
         private readonly ConcurrentQueue<Int32>           breaks     = new();
         private readonly ConcurrentQueue<Int64>           claims     = new();
+        private readonly ConcurrentQueue<(Int32 Status, String Location)>          redirects  = new();
+        private readonly ConcurrentDictionary<String, ConcurrentQueue<Byte[]>>     changes    = new();
 
         #endregion
 
@@ -197,6 +202,32 @@ namespace cloud.charging.open.TestEnvironment.Tests
             foreach (var length in Lengths)
                 claims.Enqueue(length);
         }
+
+        /// <summary>
+        /// Answer the next requests with a redirect to the given locations, one
+        /// each - 302, or the status given -, whatever they ask for.
+        /// </summary>
+        public void RedirectNextTo(Int32 Status, params String[] Locations)
+        {
+            foreach (var location in Locations)
+                redirects.Enqueue((Status, location));
+        }
+
+        /// <summary>
+        /// Once the next GET of the file at the given path is answered - broken
+        /// off or not -, put the given file in its place: a file that changed
+        /// between two attempts of a download.
+        /// </summary>
+        public void ReplaceAfterNext(String Path, Byte[] Content)
+
+            => changes.GetOrAdd(Path, _ => new ConcurrentQueue<Byte[]>()).Enqueue(Content);
+
+        /// <summary>
+        /// The ETag of a file: the SHA-256 of what it holds, as a strong entity tag.
+        /// </summary>
+        public static String ETagOf(Byte[] File)
+
+            => $"\"{Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(File))}\"";
 
         #endregion
 
@@ -327,8 +358,17 @@ namespace cloud.charging.open.TestEnvironment.Tests
                 await stream.WriteAsync(Encoding.ASCII.GetBytes(response), stop.Token);
 
                 // Broken off in the middle of the body: the connection simply ends.
-                await stream.WriteAsync(content.AsMemory(0, breakAfter is Int32 after ? Math.Min(after, content.Length) : content.Length), stop.Token);
-                await stream.FlushAsync(stop.Token);
+                try
+                {
+                    await stream.WriteAsync(content.AsMemory(0, breakAfter is Int32 after ? Math.Min(after, content.Length) : content.Length), stop.Token);
+                    await stream.FlushAsync(stop.Token);
+                }
+                finally
+                {
+                    // Served: another file in its place, where the test said so.
+                    if (method == "GET" && changes.TryGetValue(path, out var replacements) && replacements.TryDequeue(out var replacement))
+                        Files[path] = replacement;
+                }
 
             }
 
@@ -343,6 +383,9 @@ namespace cloud.charging.open.TestEnvironment.Tests
                                                                                           Dictionary<String, String>    Headers,
                                                                                           Byte[]                        Body)
         {
+
+            if (redirects.TryDequeue(out var redirect))
+                return (redirect.Status, $"Location: {redirect.Location}\r\n", [], null);
 
             if (answers.TryDequeue(out var told))
                 return (told, told is >= 300 and < 400 ? $"Location: http://127.0.0.2:{Port}{Path}\r\n" : "", [], null);
@@ -376,8 +419,12 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
                     Int32? breakAfter = breaks.TryDequeue(out var after) ? after : null;
 
-                    // "bytes=<from>-": the rest from there.
+                    var etag          = ETagOf(file);
+
+                    // "bytes=<from>-": the rest from there - of the same file only,
+                    // where an If-Range names one.
                     if (!IgnoresRange &&
+                        (!Headers.TryGetValue("If-Range", out var ifRange) || ifRange.Trim() == etag) &&
                         Headers.TryGetValue("Range", out var range) &&
                         range.StartsWith("bytes=", StringComparison.OrdinalIgnoreCase) &&
                         range[6..].Split('-')[0] is String fromText &&
@@ -385,16 +432,16 @@ namespace cloud.charging.open.TestEnvironment.Tests
                     {
 
                         if (from >= file.Length)
-                            return (416, $"Content-Range: bytes */{file.Length}\r\n", [], null);
+                            return (416, $"Content-Range: bytes */{file.Length}\r\nETag: {etag}\r\n", [], null);
 
                         return (206,
-                                $"Content-Range: bytes {from}-{file.Length - 1}/{file.Length}\r\nContent-Type: application/octet-stream\r\n",
+                                $"Content-Range: bytes {from}-{file.Length - 1}/{file.Length}\r\nETag: {etag}\r\nContent-Type: application/octet-stream\r\n",
                                 file[(Int32) from..],
                                 breakAfter);
 
                     }
 
-                    return (200, "Content-Type: application/octet-stream\r\nAccept-Ranges: " + (IgnoresRange ? "none" : "bytes") + "\r\n", file, breakAfter);
+                    return (200, $"ETag: {etag}\r\nContent-Type: application/octet-stream\r\nAccept-Ranges: " + (IgnoresRange ? "none" : "bytes") + "\r\n", file, breakAfter);
 
                 default:
                     return (405, "Allow: GET, PUT\r\n", [], null);

@@ -45,7 +45,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         #region (protected override) NewNode(DNSClient) / NodeName / BeforeConnecting(CSMS, Login)
 
         /// <summary>
-        /// A local controller of its own directory, reporting upwards, known to
+        /// A local controller of its own directory, writing its log files there
+        /// as it does in the field, reporting upwards, known to
         /// its CSMS by its id.
         /// </summary>
         protected override async Task<(OCPPServingNode Node, User_Id Login)> NewNode(DNSClient DNSClient)
@@ -59,6 +60,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
                                   AccountsPath:    directory.Accounts,
                                   ConfigFile:      directory.ConfigFile,
                                   LogToConsole:    false,
+                                  LogPath:         Path.Combine(Path.GetDirectoryName(directory.ConfigFile.Path)!, "logs"),
                                   BridgeDebugLog:  false
                               );
 

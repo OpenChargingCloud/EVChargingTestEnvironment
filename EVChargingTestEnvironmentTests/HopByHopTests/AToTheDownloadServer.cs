@@ -729,7 +729,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         /// <summary>
         /// A firmware server of the test's own breaks off the first GET after
         /// 100000 bytes. The node says DownloadPaused, waits, and asks for the
-        /// rest with a Range - "bytes=100000-" -, which the server answers 206.
+        /// rest with a Range - "bytes=100000-" - of the same file only: with an
+        /// If-Range of the ETag the first answer said. The server answers 206.
         /// The image it keeps is whole, and nothing is in it twice.
         /// </summary>
         [Test]
@@ -751,6 +752,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             Assert.Multiple(() => {
                 Assert.That(requests.Select(request => request.Answered),   Is.EqualTo(new[] { 200, 206 }),  "The node did not take up where it stopped.");
                 Assert.That(requests[1].Headers["Range"],                    Is.EqualTo("bytes=100000-"),     "The node did not ask for the rest.");
+                Assert.That(requests[1].Headers.GetValueOrDefault("If-Range"), Is.EqualTo(TestFileServer.ETagOf(Image)), "The node did not ask for the rest of the same file only.");
                 Assert.That(Told(requestId),                                 Is.EqualTo(new[] { FirmwareStatus.Downloading, FirmwareStatus.DownloadPaused, FirmwareStatus.Downloading, FirmwareStatus.Downloaded }),
                                                                                                               "The CSMS was told something else.");
                 Assert.That(File.ReadAllBytes(Staged(requestId)),            Is.EqualTo(Image),               "The image the node keeps is not whole.");
@@ -823,7 +825,163 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
         #endregion
 
-        #region HTTP_ARedirect_IsNotFollowed()
+        #region HTTP_AnImageChangedMeanwhile_IsFetchedAnewFromItsStart()
+
+        /// <summary>
+        /// A firmware server of the test's own breaks off the first GET after
+        /// 100000 bytes, and then has another image in the place of the first.
+        /// The node asks for the rest of the first one - If-Range of its ETag -,
+        /// the server sends the new one whole, and the node cuts away what it
+        /// had of the first and keeps the new one, byte for byte: no image of
+        /// two halves.
+        /// </summary>
+        [Test]
+        public async Task HTTP_AnImageChangedMeanwhile_IsFetchedAnewFromItsStart()
+        {
+
+            var newer                  = RandomNumberGenerator.GetBytes(250_000);
+            var server                 = ATestServerWithTheImage();
+
+            server.BreakNextAfter(100_000);
+            server.ReplaceAfterNext(ImagePath, newer);
+
+            var (response, requestId)  = await UpdateFirmware(server.URL(ImagePath), Retries: 2);
+
+            Accepted(response);
+
+            Assert.That(await UntilTold(requestId), Is.EqualTo(FirmwareStatus.Downloaded), $"The image was not downloaded at last.{Story(node, csms)}");
+
+            var requests = server.Requests.ToArray();
+
+            Assert.Multiple(() => {
+                Assert.That(requests.Select(request => request.Answered),     Is.EqualTo(new[] { 200, 200 }),        "The new image was not sent whole.");
+                Assert.That(requests[1].Headers.GetValueOrDefault("If-Range"), Is.EqualTo(TestFileServer.ETagOf(Image)), "The node did not name the first image.");
+                Assert.That(File.ReadAllBytes(Staged(requestId)),              Is.EqualTo(newer),                    "The image the node keeps is not the new one, whole - or has a part of the first.");
+                Assert.That(node!.Log.Recent(200).Select(entry => entry.Message),
+                            Has.Some.Contains("changed since the attempt before"),                                   "The node's log does not say that the image changed.");
+            });
+
+        }
+
+        #endregion
+
+        #region HTTP_ARedirectToAServerItsConfigurationNames_IsFollowed_SigningInThereAsItsConfigurationSays()
+
+        /// <summary>
+        /// A firmware server of the test's own - signed in to with the login of
+        /// the URL - sends the download on to the download server, with a query
+        /// as a content delivery network signs a URL with. The node's
+        /// configuration names both for downloads, the download server with the
+        /// login of its downloader: the redirect is followed, signed in there
+        /// as the configuration says - the login of the URL goes to the server
+        /// the request named, and nowhere else -, and the image is downloaded.
+        /// </summary>
+        [Test]
+        public async Task HTTP_ARedirectToAServerItsConfigurationNames_IsFollowed_SigningInThereAsItsConfigurationSays()
+        {
+
+            await ADownloadServer();
+
+            var origin = ATestServer(User: "origin-login", Password: "origin-password");
+
+            HoldsTheHTTPFileServers(new HTTPFileServer("origin", new Uri(origin.URL("/firmware/")), Directions: FileTransferDirections.Download),
+                                    TheDownloadServer(Identity, downloaderPassword));
+
+            origin.RedirectNextTo(302, DownloadServerURL() + "?expires=2000000000&signature=0123456789abcdef");
+
+            var (response, requestId)  = await UpdateFirmware($"http://origin-login:origin-password@127.0.0.1:{origin.Port}/firmware/{ImageName}");
+
+            Accepted(response);
+
+            Assert.That(await UntilTold(requestId), Is.EqualTo(FirmwareStatus.Downloaded), $"The image was not downloaded where the redirect leads.{Story(node, downloadServer, csms)}");
+
+            Assert.Multiple(() => {
+                Assert.That(File.ReadAllBytes(Staged(requestId)),     Is.EqualTo(Image),             "The image the node keeps is not the one offered.");
+                Assert.That(origin.Requests.Single().Answered,        Is.EqualTo(302));
+                Assert.That(origin.Requests.Single().Headers.ContainsKey("Authorization"), Is.True, "The node did not sign in where the request named.");
+                Assert.That(Recorded.Single().Downloader,             Is.EqualTo(Identity),          "The download server was not signed in to as the configuration says.");
+                Assert.That(downloadServer!.HTTPDownloadsRefused,     Is.Zero,                       "The login of the URL went to the download server as well.");
+                Assert.That(node!.Log.Recent(200).Select(entry => entry.Message),
+                            Has.Some.Contains("is sent on to"),                                     "The node's log does not say where the download was sent on to.");
+            });
+
+        }
+
+        #endregion
+
+        #region HTTP_ARedirectFromHTTPSToHTTP_IsNotFollowed()
+
+        /// <summary>
+        /// A firmware server over HTTPS sends the download on to the download
+        /// server over plain HTTP, which the configuration names as well: not
+        /// followed - the image would come over a connection nobody vouches
+        /// for. DownloadFailed, and nothing is fetched.
+        /// </summary>
+        [Test]
+        public async Task HTTP_ARedirectFromHTTPSToHTTP_IsNotFollowed()
+        {
+
+            await ADownloadServer();
+
+            var origin = ATestServer(Secure: true);
+
+            TrustsTheTestCA(node!);
+
+            HoldsTheHTTPFileServers(new HTTPFileServer("origin", new Uri(origin.URL("/firmware/")), Directions: FileTransferDirections.Download),
+                                    TheDownloadServer(Identity, downloaderPassword));
+
+            origin.RedirectNextTo(302, DownloadServerURL());
+
+            var (response, requestId)  = await UpdateFirmware(origin.URL(ImagePath), Retries: 2);
+
+            Accepted(response);
+
+            Assert.That(await UntilTold(requestId), Is.EqualTo(FirmwareStatus.DownloadFailed), $"A redirect from https to http was told as something else.{Story(node, downloadServer, csms)}");
+
+            Assert.Multiple(() => {
+                Assert.That(origin.Requests,                          Has.Count.EqualTo(1),          "A redirect from https to http was asked again.");
+                Assert.That(Recorded,                                 Is.Empty,                      "Something was fetched over http after https.");
+                Assert.That(downloadServer!.HTTPDownloadsRefused,     Is.Zero,                       "A request reached the download server.");
+                Assert.That(node!.Log.Recent(200).Select(entry => entry.Message),
+                            Has.Some.Contains("from https:// to"),                                  "The node's log does not say why.");
+            });
+
+        }
+
+        #endregion
+
+        #region HTTP_RedirectsWithoutEnd_AreFollowedFiveTimes()
+
+        /// <summary>
+        /// A firmware server of the test's own sends the download on to itself
+        /// again and again: five redirects are followed, the sixth is not.
+        /// DownloadFailed, not tried again.
+        /// </summary>
+        [Test]
+        public async Task HTTP_RedirectsWithoutEnd_AreFollowedFiveTimes()
+        {
+
+            var server = ATestServerWithTheImage();
+
+            server.RedirectNextTo(302, [ .. Enumerable.Range(1, 8).Select(number => server.URL($"/firmware/hop-{number}.bin")) ]);
+
+            var (response, requestId)  = await UpdateFirmware(server.URL(ImagePath), Retries: 2);
+
+            Accepted(response);
+
+            Assert.That(await UntilTold(requestId), Is.EqualTo(FirmwareStatus.DownloadFailed), $"Redirects without end were told as something else.{Story(node, csms)}");
+
+            Assert.Multiple(() => {
+                Assert.That(server.Requests,                          Has.Count.EqualTo(1 + WWCPNode.MaxHTTPRedirects), "Not five redirects followed, and then no more.");
+                Assert.That(node!.Log.Recent(200).Select(entry => entry.Message),
+                            Has.Some.Contains($"after {WWCPNode.MaxHTTPRedirects} already"),        "The node's log does not say why.");
+            });
+
+        }
+
+        #endregion
+
+        #region HTTP_ARedirectToAServerItsConfigurationDoesNotName_IsNotFollowed()
 
         /// <summary>
         /// A firmware server of the test's own answers with a redirect - 302 to
@@ -832,7 +990,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         /// and the node's log says why.
         /// </summary>
         [Test]
-        public async Task HTTP_ARedirect_IsNotFollowed()
+        public async Task HTTP_ARedirectToAServerItsConfigurationDoesNotName_IsNotFollowed()
         {
 
             var server                 = ATestServerWithTheImage();
