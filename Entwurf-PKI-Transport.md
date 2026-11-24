@@ -246,3 +246,92 @@ Verbindung, über die gefragt wurde, oder null bei HTTP.
     Verbindung als `via`.
   - `Station_GetCertificateStatus_OfACAThePKIDoesNotHave_IsNotAsked`: eine
     fremde CA, ein fremder Responder, also `Failed` und `refused`.
+
+## 9. Verbindungen und Logins der Registrierungsstellen verwalten
+
+Stand 2026-11-24. Gebaut (die Seiten: siehe 9.3).
+
+Bisher gab es die Verwaltung von Verbindungen, Logins und Client-Vertrauen
+nur in WWCP_OCPP. Sie ist jetzt in WWCP_Node, damit jeder Knoten sie hat:
+zuerst die PKI, später auch Netzbetreiber, EMSP und Zähler.
+
+### 9.1 WWCP_Node
+
+- `Web/NodeHTTPAPI.Connections.cs`: die Routen der Verbindungen
+  (`v1/configuration/connections`, `…/authentications`, `…/sshKeys`,
+  `v1/status/connections`, Test, Pin-Set-Signer), unverändert aus
+  `OCPPConnectingHTTPAPI` übernommen. Ein Knoten schaltet sie mit
+  `RegisterConnectionRoutes(resource)` ein.
+- `Web/NodeHTTPAPI.WebSocketLogins.cs`: die Routen der Logins eines
+  WebSocket-Servers unter einer Wurzel: `logins` (Passwort, TOTP mit
+  Bindung, SSH-Schlüssel, Key-Pins), `groups`, `trust`. Eingeschaltet mit
+  `RegisterWebSocketLoginRoutes(new WebSocketLoginRoutes(root, logins,
+  trust, resource, noun, tags, loginRemoved, marks))`. `WebSocketLoginMark`
+  beschreibt Markierungen wie `localController` und `gateway`; höchstens
+  eine ist wahr. Ein SSH-Schlüssel für einen Namen, der auch ein Konto ist,
+  wird abgelehnt.
+- `CommandLine/LoginKeysCommand.cs` und `LoginPinsCommand.cs`: die Befehle
+  für SSH-Schlüssel und Key-Pins der Logins, als Basisklassen.
+
+### 9.2 WWCP_OCPP
+
+- `OCPPConnectingHTTPAPI` ruft nur noch `RegisterConnectionRoutes` auf.
+- `OCPPServingHTTPAPI.OCPPServer` behält `GET`/`PUT ocpp-server` und
+  registriert den Rest mit `RegisterWebSocketLoginRoutes` unter
+  `v1/configuration/ocpp-server`, mit „charging station“ und den
+  Markierungen `LocalController` und `Gateway`.
+- `StationKeysCommand` und `StationPinsCommand` erben von den
+  Basisklassen. Name, Texte und Konstruktor bleiben gleich.
+
+Routen, JSON und Texte für OCPP sind unverändert.
+
+### 9.3 PKI
+
+- `PKIAccess.RegistrationAuthorities` (`registrationAuthorities`): neue
+  Ressource. Lesen dürfen Operator und Registrar (sie lesen alles),
+  ändern nur Administratoren. Wer eine Registrierungsstelle zulässt, lässt
+  in ihrem Namen CSRs signieren.
+- `HTTPAPI/PKIHTTPAPI.RegistrationAuthorities.cs`:
+  - die Routen der Verbindungen an dieser Ressource;
+  - `GET v1/configuration/ra-server`: `configuration` (Abschnitt
+    `webSocketServer`), `state` (`running`, `tls`, `ssh`, `sshPort`),
+    `connected` (wer gerade verbunden ist), `signed` (Zertifikate je
+    Login, nach `CreatedBy = ra:<login>`);
+  - die Login-Routen unter `v1/configuration/ra-server` (`logins`,
+    `groups`, `trust`) mit „registration authority“ und ohne Markierungen.
+  - Ein `PUT` des Servers gibt es nicht: Er wird in der Datei geändert,
+    danach startet man die PKI neu.
+- `CommandLine/RaCommands.cs`:
+  - `ras`: Server, jede Registrierungsstelle mit Verbindung (an/aus),
+    verbunden oder nicht, Zahl der signierten Zertifikate, womit sie sich
+    anmeldet; Logins ohne Verbindung;
+  - `raKeys` und `raPins`: SSH-Schlüssel und Key-Pins, mit dem, was eine
+    Registrierungsstelle draußen hält.
+- Seiten: Die gemeinsamen Seiten für Verbindungen, Logins und
+  Client-Vertrauen liegen in `WWCP_Node/Frontend`. Die PKI zeigt sie für
+  ihre Registrierungsstellen, dazu eine Übersicht des Servers.
+
+Eine Registrierungsstelle wird zweimal eingetragen, wie jeder, der sich
+mit einem Knoten verbindet:
+
+1. als eingehende Verbindung vom Typ `RegistrationAuthority`
+   (`wss://host:2364/<login>` oder `ssh://<login>@host:22`); sie wird
+   abgeschaltet, um die Stelle auszusperren;
+2. als Login mit Passwort, TOTP, SSH-Schlüssel oder Key-Pin.
+
+### 9.4 Tests
+
+- PKI, `RegistrationAuthorityAPITests`:
+  - ein Administrator trägt Verbindung und Login ein (Passwort, Key-Pin),
+    schaltet sie ab und an und entfernt beides; Markierungen von OCPP
+    werden abgelehnt;
+  - Registrar und Operator lesen, ändern aber nichts (`403`);
+  - `ras`, `raPins` und `raKeys` an der Konsole.
+- OCPP, CSMS: die bestehenden Tests der Routen und Befehle, unverändert.
+
+### 9.5 Offen
+
+- `PUT` des Servers der Registrierungsstellen (Port, TLS, SSH) zur
+  Laufzeit.
+- Netzbetreiber, EMSP und Zähler auf die gemeinsamen Routen und Seiten
+  umstellen.
