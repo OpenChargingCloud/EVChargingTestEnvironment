@@ -49,6 +49,10 @@
     <Project Path="libs/LocalController/LocalController/LocalController.csproj" />
     <Project Path="libs/LocalController/LocalControllerTests/LocalControllerTests.csproj" />
   </Folder>
+  <Folder Name="/Dependencies/Entities/LogServer/">
+    <Project Path="libs/LogServer/LogServer/LogServer.csproj" />
+    <Project Path="libs/LogServer/LogServerTests/LogServerTests.csproj" />
+  </Folder>
   <Folder Name="/Dependencies/Entities/ModbusTLSEnergyMeter/">
     <Project Path="libs/ModbusTLSEnergyMeter/ModbusTLSEnergyMeter/ModbusTLSEnergyMeter.csproj" />
     <Project Path="libs/ModbusTLSEnergyMeter/ModbusTLSEnergyMeterTests/ModbusTLSEnergyMeterTests.csproj" />

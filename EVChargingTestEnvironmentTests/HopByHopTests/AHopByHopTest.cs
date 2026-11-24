@@ -314,6 +314,62 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
         #endregion
 
+        #region AServerCertificateOfTheTestCA(Host = "127.0.0.1")
+
+        /// <summary>
+        /// A certificate of the test's CA for a TLS server of the test's own -
+        /// an HTTPS file server, say - with its private key.
+        /// </summary>
+        /// <param name="Host">The address it is for.</param>
+        protected X509Certificate2 AServerCertificateOfTheTestCA(String Host = "127.0.0.1")
+        {
+            var (_, _, withKey) = AServerCertificateOfTheTestCAAsPEM(Host);
+            return withKey;
+        }
+
+        /// <summary>
+        /// A certificate of the test's CA for a TLS server, as PEM files have it -
+        /// the certificate followed by the CA's, and its private key - and as one
+        /// certificate with its key.
+        /// </summary>
+        /// <param name="Host">The address it is for.</param>
+        protected (String FullChainPEM, String PrivateKeyPEM, X509Certificate2 WithKey) AServerCertificateOfTheTestCAAsPEM(String Host = "127.0.0.1")
+        {
+
+            var ca        = TestCA;
+
+            using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+            var request   = new CertificateRequest($"CN={Host}", key, HashAlgorithmName.SHA256);
+            var names     = new SubjectAlternativeNameBuilder();
+
+            if (System.Net.IPAddress.TryParse(Host, out var address))
+                names.AddIpAddress(address);
+            else
+                names.AddDnsName(Host);
+
+            request.CertificateExtensions.Add(names.Build());
+            request.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, true));
+            request.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature, true));
+            request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension([ new Oid("1.3.6.1.5.5.7.3.1") ], false));   // TLS server
+
+            using var certificate = request.Create(ca.SubjectName,
+                                                   X509SignatureGenerator.CreateForECDsa(testCAKey!),
+                                                   DateTimeOffset.UtcNow.AddDays(-1),
+                                                   DateTimeOffset.UtcNow.AddDays(30),
+                                                   Guid.NewGuid().ToByteArray());
+
+            // With its key, and loadable by SslStream on Windows: through PKCS#12.
+            using var withKey     = certificate.CopyWithPrivateKey(key);
+
+            return (certificate.ExportCertificatePem() + Environment.NewLine + ca.ExportCertificatePem(),
+                    key.ExportPkcs8PrivateKeyPem(),
+                    X509CertificateLoader.LoadPkcs12(withKey.Export(X509ContentType.Pkcs12), null));
+
+        }
+
+        #endregion
+
         #region BelievesTheTestCA(Node)
 
         /// <summary>
@@ -327,6 +383,19 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             if (!OverTLS)
                 return;
+
+            TrustsTheTestCA(Node);
+
+        }
+
+        /// <summary>
+        /// The given node believes the test's CA, whatever the test connects over:
+        /// a TLS root of its own store, kept for what it judges the servers of its
+        /// connections by - and an HTTPS file server.
+        /// </summary>
+        /// <param name="Node">The node that connects.</param>
+        protected void TrustsTheTestCA(WWCPNode Node)
+        {
 
             Assert.That(Node.Certificates.Import(Encoding.ASCII.GetBytes(TestCA.ExportCertificatePem()),
                                                  CertificateKind.TLSRoot,
