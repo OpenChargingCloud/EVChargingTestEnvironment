@@ -1,0 +1,296 @@
+# Entwurf: GetLog über HTTP, HTTPS und SFTP zum Log-Server
+
+Stand 2026-11-24. Gilt für `CS_2_Log` und `LC_2_Log`. Gebaut, siehe Abschnitt 6.
+
+## 1. Ziel
+
+- Das CSMS fragt eine Ladestation (CS) oder einen LocalController (LC) mit
+  `GetLog` nach seinem Log. Der Knoten lädt es auf den Log-Server
+  (`OpenChargingCloud/LogServer`).
+- Wege: `PUT` über `http://` und `https://`, und `sftp://` nach dem Whitepaper
+  „SFTP for Logfile Uploads and Firmware Downloads“.
+- Der Knoten lädt nur zu einem Log-Server hoch, den seine eigene Konfiguration
+  nennt. Eine Anfrage wählt unter diesen Servern aus. Einen neuen Server führt
+  sie nie ein.
+- Der Knoten meldet dem CSMS mit `LogStatusNotification`, wie der Upload lief:
+  `Uploading`, dann `Uploaded`, `UploadFailure`, `PermissionDenied` oder
+  `NotSupportedOperation`.
+
+## 2. Befund
+
+| Baustein | Ort | Stand |
+|---|---|---|
+| SFTP-Upload und -Download, Fileserver als SSH-Peers, eigene Schlüssel je Server und Login (`UploadFileAsync`, `JudgeFileTransfer`) | WWCP_Node `WWCPNode.FileTransfers.cs` | da |
+| Antwort auf `GetLog`, Versuche, Abbruch durch eine neue Anfrage, Meldungen (`FileTransfers.StartUpload`) | WWCP_OCPP_Node | da, aber **nur `sftp://`**. `http(s)://` ergab `NotSupported` |
+| Wer die Datei liefert (`FileTransfers.FileProvider`) | – | **fehlte** bei CS und LC. Jedes `GetLog` ergab `NotSupported` |
+| `GetLog` an den LC selbst | WWCP_OCPPv2.1_LocalController | **fehlte**: kein Handler, kein `IFileTransferNode` |
+| HTTP-Uploads | – | **fehlten** ganz |
+| Log-Server mit `PUT` und SFTP-Bereich `/upload`, Uploader als Konten | LogServer | da, aber nicht im Superprojekt |
+
+## 3. Entscheidungen (Achim, 2026-11-24)
+
+1. **Bauen und testen.** HTTP-Uploads kommen in WWCP_Node und WWCP_OCPP_Node.
+   CS und LC liefern ihr eigenes Log. Danach folgen die Tests.
+2. **HTTP-Upload ist ein `PUT`**: die Datei als Body nach
+   `<Verzeichnis>/<Dateiname>`, mit `If-None-Match: *`. Ein multipart-`POST`
+   gibt es nicht.
+3. **Der echte Log-Server** kommt als Submodul `libs/LogServer` ins
+   Superprojekt. Die Tests laden zu ihm hoch.
+4. **Zugangsdaten:** Login und Passwort können aus der URL der Anfrage kommen,
+   wie ein CSMS sie in `GetLog` mitgibt
+   (`http://CS001:<pw>@host:8363/CS001/`). Sie können auch aus der
+   Konfiguration kommen. **Die der URL gehen vor.** Das Ziel muss trotzdem ein
+   konfigurierter Server sein.
+
+## 4. Was über die Leitung geht
+
+### 4.1 HTTP und HTTPS
+
+```
+PUT /<Verzeichnis>/<Dateiname> HTTP/1.1
+If-None-Match: *
+Content-Type: application/octet-stream
+Content-Length: <Größe>
+Authorization: Basic <login:passwort>      (falls es welche gibt)
+User-Agent: WWCP-Node/1.0
+```
+
+Das Verzeichnis ist der Pfad der URL. Die Antwort zählt so:
+
+| Antwort | Ergebnis (`FileTransferOutcome`) | `UploadLogStatus` | Neuer Versuch |
+|---|---|---|---|
+| 2xx | `Done` | `Uploaded` | – |
+| 412 | `FileExists` | `UploadFailure` | nein |
+| 401 | `LoginRefused` | `PermissionDenied` | nein |
+| 403 | `PermissionDenied` | `PermissionDenied` | nein |
+| 404 | `NoSuchFile` | `PermissionDenied` | nein |
+| 405, 501 | `MethodNotAllowed` | `NotSupportedOperation` | nein |
+| 413 | `TooLarge` | `UploadFailure` | nein |
+| 408, 429, 5xx | `Failed` | `UploadFailure` | ja |
+| Weiterleitung, andere 4xx | `RejectedByServer` | `UploadFailure` | nein |
+| Zertifikat nicht geglaubt | `CertificateRefused` | `UploadFailure` | nein |
+| keine Verbindung, Leerlauf | `Unreachable` | `UploadFailure` | ja |
+
+- **Weiterleitungen** werden nicht verfolgt.
+- **Cookies** werden nicht gespeichert.
+- **Namen** löst der DNS-Client des Knotens auf (`NameResolution.HTTPHandler`).
+- **Server über HTTPS** prüft der Knoten wie den Server einer `wss://`-Verbindung.
+  Es gelten seine TLS-Wurzeln für Verbindungen (`ConnectionsCertificateUsage`)
+  und die der Maschine. Gelernt wird dabei nichts.
+
+### 4.2 SFTP
+
+Unverändert nach dem Whitepaper, nur jetzt zum Log-Server:
+
+- Der Knoten meldet sich mit seinem eigenen Schlüssel für diesen Server und
+  Login an.
+- Er hält den Server an einen gepinnten Hostkey.
+- Er lädt als `<name>.part` hoch und benennt die Datei nach dem letzten Byte um.
+- Er überschreibt nichts.
+
+### 4.3 Die Datei
+
+`NodeLogFiles` liefert die Einträge des Event-Logs des Knotens aus der
+angefragten Zeit, ein JSON-Objekt je Zeile.
+
+- `DiagnosticsLog` (und `Diagnostics` von OCPP 1.6) enthält alle Einträge.
+- `SecurityLog` enthält die Einträge mit dem Tag `security`.
+- `DataCollectorLog` führt der Knoten nicht und antwortet `NothingToSend`.
+
+Der Dateiname ist `<Identität>-<LogType>-<RequestId>-<yyyyMMddTHHmmssfffZ>.jsonl`.
+
+### 4.4 Die Konfiguration des Knotens
+
+```json
+"httpFileServers": [
+  { "id": "logs", "url": "https://logs.example.org:8363/{id}/",
+    "user": "CS001", "password": "..." }
+]
+```
+
+- **`url`:** Das Verzeichnis, in das hochgeladen werden darf, mit allem
+  darunter. Schema, Host und Port müssen genau passen. Der Pfad zählt als
+  Präfix. `{id}` steht für die Identität des Knotens
+  (`FileTransferIdentity`).
+- **`user` und `password`:** Optional, HTTP Basic. Sie gelten nur, wenn die URL
+  der Anfrage keine Zugangsdaten trägt.
+- **Lesen:** Der Abschnitt wird bei jeder Anfrage aus der Datei gelesen. Eine
+  Änderung gilt ab der nächsten Anfrage.
+- **Fehlerhafte Einträge** werden weggelassen, mit einer Warnung im Log.
+  Höchstens 8 Einträge.
+
+### 4.5 Was eine Anfrage ablehnt, bevor etwas gesendet wird
+
+| Fall | `reasonCode` |
+|---|---|
+| Schema weder `sftp`, `http` noch `https` | `NotSupported` |
+| leerer Login in der URL, Query oder Fragment, `..`, `%2F`, `%5C` oder Steuerzeichen im Pfad | `InvalidURL` |
+| Schema, Host oder Port keines konfigurierten Servers, oder Pfad außerhalb seines Verzeichnisses | `FileServerNotPermitted` |
+| nichts zu senden | `NothingToSend` |
+
+Ein Code gilt für alles, was die Konfiguration nicht hat. Die Antwort sagt
+nicht, welche Server der Knoten kennt. Das Log des Knotens sagt es genau, und
+`FileServerNotPermitted` ist zugleich das Sicherheitsereignis
+`FileTransferRefused`.
+
+## 5. Reihenfolge
+
+| # | Repo | Commit | Inhalt |
+|---|---|---|---|
+| 1 | WWCP_Node | `37420ec` | `HTTPFileServer`, `JudgeHTTPFileTransfer`, `UploadFileOverHTTPAsync` |
+| 2 | WWCP_OCPP | `2d920247` | `http(s)://` in `FileTransfers`, `NodeLogFiles`, `GetLog` an den LC |
+| 3 | ChargingStation | `48b425f` | `FileProvider` = eigenes Log |
+| 4 | LocalController | `8d4a4b4` | `FileProvider` = eigenes Log |
+| 5 | LogServer | `6ce500f` | `.part` erst nach dem Umbenennen übernehmen (Abschnitt 6.1) |
+| 6 | Superprojekt | `9f7277c` | `CS_2_Log`, `LC_2_Log`, LogServer in Lösung und Tests |
+
+Das Submodul `libs/LogServer` selbst steckt in `0a23d0f`. Eine parallele
+Session hat den gestagten Eintrag dort mit committet, unter einer Nachricht zu
+WWCP_Node.
+
+## 6. Was gebaut ist
+
+**WWCP_Node**
+
+- `HTTPFileServer` (`id`, `url`, `user`, `password`, `Problem`,
+  `AllowsDirectory`) und `WWCPNode.HTTPFileServers`.
+- `JudgeHTTPFileTransfer(URL)`. Entscheidet ohne Netz, wie
+  `JudgeFileTransfer` für SFTP.
+- `UploadFileOverHTTPAsync(URL, Content, FileName, …)`: ein Versuch, ein `PUT`.
+  - Die Zugangsdaten der URL gehen vor die der Konfiguration.
+  - Über `http://` mit Passwort steht bei jedem Upload eine Warnung im Log.
+  - Das Passwort selbst steht nie im Log.
+  - Es gelten Leerlauf- und Verbindungs-Timeout wie bei SFTP
+    (`FileTransferIdleTimeout`, `FileTransferConnectTimeout`).
+- `FileTransferOutcome` hat `CertificateRefused`, `MethodNotAllowed` und
+  `RejectedByServer` dazu.
+- `FileTransferJudgement` hat `HTTPLocation` und `HTTPServer`.
+- `OnHTTPFileServerCertificateRefused` meldet ein abgelehntes Zertifikat.
+
+**WWCP_OCPP**
+
+- `FileTransfers.StartUpload` nimmt `sftp://`, `https://` und `http://` und
+  wählt danach das Urteil und den Upload.
+- `MethodNotAllowed` wird zu `NotSupportedOperation`.
+- Die Info von `InvalidURL` nennt kein Schema mehr.
+- `DeviceModelBridge` macht aus einem abgelehnten Zertifikat das
+  Sicherheitsereignis `InvalidFileServerCertificate`.
+- `NodeLogFiles`: `Provider(Node)`, `Of(Node, Request)`, `FileName`.
+- `TestLocalControllerNode` ist ein `IFileTransferNode`.
+  - `GetLog` und `UpdateFirmware` für den LC selbst gehen an den Prozessor der
+    Brücke.
+  - Ohne Prozessor antwortet der LC `Rejected`/`NotSupported`.
+  - `SendLogStatus` schickt `LogStatusNotification` an das CSMS.
+- `FileTransferBridgeTests`: Ein `https://`-Server, den die Konfiguration nicht
+  nennt, ist `FileServerNotPermitted`. `ftp://` ist `NotSupported`.
+
+**ChargingStation, LocalController**
+
+- `FileTransfers.FileProvider = NodeLogFiles.Provider(this)`.
+
+**LogServer**
+
+- `TakeInSftpUpload` übergeht `<name>.part`. Übernommen wird die Datei, wenn
+  sie umbenannt wird. Siehe 6.1.
+
+**Superprojekt**
+
+- `libs/LogServer` liegt in `EVChargingTestEnvironment.slnx` und wird im
+  Testprojekt referenziert.
+- `AHopByHopTest` hat dazu:
+  - `TrustsTheTestCA(Node)`: wie `BelievesTheTestCA`, aber unabhängig vom
+    Testnamen;
+  - `AServerCertificateOfTheTestCA()` und `AServerCertificateOfTheTestCAAsPEM()`:
+    ein Server-Zertifikat der Test-CA, als Zertifikat mit Schlüssel und als
+    PEM-Paar für `web.tls.certificate`.
+- `Helpers/HTTPLogServer.cs` ist ein kleiner HTTP/1.1-Server der Tests.
+  - Er nimmt `PUT`, achtet auf `If-None-Match`, fragt optional Basic Auth ab
+    und liest Content-Length und chunked.
+  - Mit `AnswerNext(…)` antwortet er auf die nächsten Anfragen mit festen
+    Status. Damit lassen sich 412, 503/500 und 405 prüfen, die der Log-Server
+    nicht absichtlich liefert.
+- `AToTheLogServer.cs` enthält alle Fälle. `CS_2_Log.cs` und `LC_2_Log.cs`
+  erzeugen nur den Knoten, wie bei `AToTheEnergyMeter`.
+  - Der Knoten verbindet sich mit `ws://` und Passwort mit dem CSMS, das ihn
+    annimmt.
+  - Der LC wird beim CSMS als LocalController markiert.
+  - Das CSMS schickt `GetLog`. Die Tests zählen die `LogStatusNotification`s
+    beim CSMS mit.
+  - Der Log-Server läuft mit `httpListen` 127.0.0.1, eigenem Upload-Port und
+    SSH mit SFTP, bei HTTPS mit einem PEM-Paar der Test-CA unter
+    `web.tls.certificate`.
+  - Sein Uploader heißt wie die Identität des Knotens.
+
+### 6.1 Was die Tests gefunden haben
+
+**SFTP zum Log-Server schlug fehl.** Der Knoten lädt nach dem Whitepaper als
+`<name>.part` hoch und benennt die Datei dann um. Der SFTP-Bereich des
+Log-Servers meldet beim Schließen der Datei `PutInPlace`, und der Log-Server
+nahm `<name>.part` sofort in seinen Store. Das Umbenennen fand nichts mehr
+(`NoSuchFile`), und das CSMS hörte `PermissionDenied`. Behoben im Log-Server
+(`6ce500f`).
+
+### 6.2 Tests
+
+`CS_2_Log` und `LC_2_Log` je 13 Fälle, zusammen 26, alle grün.
+
+| Test | Gegen | Was er zeigt |
+|---|---|---|
+| `HTTP_UploadsItsLog` | Log-Server | Zugangsdaten in der URL. `Uploading`, `Uploaded`. Beim Log-Server als HTTP-Upload des Uploaders und der Station. Das Log sagt, dass der Knoten gefragt wurde. Warnung „in the clear“, Passwort nie im Log |
+| `HTTPS_UploadsItsLog_SigningInAsItsConfigurationSays` | Log-Server, TLS | URL ohne Login, Zugangsdaten aus der Konfiguration. Server geglaubt über die Test-CA. Keine Klartext-Warnung |
+| `HTTP_TheLoginOfTheURL_GoesBeforeThatOfItsConfiguration` | Log-Server | Falsches Passwort in der Konfiguration. Das der URL lädt hoch. Ohne URL-Login 401, also `PermissionDenied`, ohne zweiten Versuch |
+| `HTTPS_SendsNothing_ToALogServerItDoesNotBelieve` | Log-Server, TLS | Test-CA nicht geglaubt: `UploadFailure`, kein Upload, genau ein `CertificateRefused` trotz `Retries: 3` |
+| `HTTP_RefusesWhatItsConfigurationDoesNotName` | Log-Server und Testserver | Wurzel, fremdes Verzeichnis, fremder Port, anderes Schema: `FileServerNotPermitted`. Leerer Login, Query: `InvalidURL`. `ftp://`: `NotSupported`. Nichts erreicht einen Server, nichts wird gemeldet, die Antwort nennt keinen Port und keinen Namen |
+| `HTTP_UploadsItsSecurityLog` | Log-Server | `SecurityLog` enthält nur Einträge mit `security`, darunter die vorher abgelehnte Anfrage. Der Name sagt `SecurityLog` |
+| `HTTP_WritesNothingOver` | Testserver | 412: ein `PUT` mit `If-None-Match: *`, kein zweiter Versuch |
+| `HTTP_TriesAgain_AfterTheServerFailed` | Testserver | 503, 500, 201: drei Versuche mit demselben Inhalt. `Uploading` nur einmal |
+| `HTTP_AServerThatTakesNoPUT_IsNotSupported` | Testserver | 405: `NotSupportedOperation`, kein zweiter Versuch |
+| `SFTP_UploadsItsLog` | Log-Server | Eigener Schlüssel, gepinnter Hostkey. Beim Log-Server als SFTP-Upload, genau einer (keine `.part`-Reste) |
+| `SFTP_RefusesWhatItsConfigurationDoesNotName` | Log-Server | `/firmware/`, fremder Port, fremder Login: `FileServerNotPermitted`. Passwort in der URL: `InvalidURL` |
+| `SFTP_SendsNothing_ToALogServerThatShowsAnotherHostKey` | Log-Server | Anderer Pin: `UploadFailure`, genau ein `HostKeyRefused` trotz `Retries: 2` |
+| `SFTP_RefusesAnUpload_UntilItsKeyIsConfirmed` | Log-Server | Unbestätigter Schlüssel: `FileServerNotPermitted`. Nach `ConfirmFileTransferKey` wird hochgeladen |
+
+Die Tests, deren Name mit `SFTP_` beginnt, schalten nach der Regel von
+`AHopByHopTest` auch beim CSMS einen SSH-Server ein. Er wird nicht gebraucht,
+stört aber nicht.
+
+Daneben grün: WWCP_Node `FileTransfer`/`Sftp` (51), WWCP_OCPP_Node
+`FileTransferBridgeTests` (13), LogServer (196).
+
+In `LocalControllerTests` schlägt `SwitchedOff_ItIsLetGoOf_AndLetInAgainOnceSwitchedOn`
+fehl (401 erwartet, 503 bekommen). Ursache ist WWCP_Node `168d938`
+(abgeschaltete Verbindung mit 503 und Retry-After), nicht `GetLog`.
+
+### 6.3 Abweichungen
+
+- **Login und Passwort in der URL** sind bei HTTP erlaubt und gehen vor. Bei
+  SFTP bleibt ein Passwort in der URL `InvalidURL`, wie im Whitepaper.
+- **Ein Passwort über `http://`** ist erlaubt, in der URL wie in der
+  Konfiguration. Der Log-Server nimmt es so an und warnt bei jedem Start. Der
+  Knoten warnt bei jedem Upload.
+- **`GetLog` an den LC** wird ohne Prozessor mit `Rejected`/`NotSupported`
+  beantwortet, nicht wie bei der CS mit `Accepted`. Ein `Accepted`, auf das kein
+  Upload folgt, wäre falsch.
+
+### 6.4 Offen
+
+- **Downloads über HTTP** (`UpdateFirmware` mit `http(s)://`) bleiben
+  `NotSupported`.
+- **`httpFileServers` gibt es nur in der Datei.** Es fehlen HTTP-API, Seite,
+  Kommandozeile und eine Variable im Device Model, wie sie die SSH-Peers haben.
+  Das Passwort steht im Klartext in der Konfiguration.
+- **Ob die GetLog-URL mit Passwort in einem Nachrichten-Log von OCPP landet**
+  (Debug-Log, HTTP-SSE der Knoten), ist nicht geprüft.
+- **Das Log ist nur das Event-Log im Speicher**, standardmäßig die letzten
+  2000 Einträge (`EventLog.DefaultCapacity`).
+  Die Logdateien auf der Platte (`LogPath`) werden nicht gelesen, auch kein
+  Archiv mehrerer Dateien.
+- **`InvalidFileServerCertificate` beim CSMS** ist nicht Ende zu Ende geprüft.
+  Die Tests sehen nur das Log des Knotens. Beim LC hängt das Melden an
+  `csms.url`, nicht an den Verbindungen.
+- **`GetDiagnostics` und `GetLog` von OCPP 1.6 über HTTP** laufen durch
+  dasselbe `StartUpload`, haben aber keinen Test Ende zu Ende.
+- **Das Gateway** hat keine `DeviceModelBridge` und keinen `FileProvider`. Ein
+  `GetLog` an das Gateway selbst lädt nichts hoch.
+- **Reste im Log-Server:** Eine `.part`-Datei, die nie umbenannt wird, bleibt
+  in `.sftp-incoming` liegen.
