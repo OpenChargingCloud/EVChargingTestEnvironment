@@ -1,8 +1,8 @@
 # EVChargingTestEnvironment
 
-A vehicle, a charging station, a local controller, a CSMS and an EMSP, in one
-process, already pointed at each other and already holding the certificates
-they need — until Ctrl+C.
+A vehicle, a charging station, a local controller, a CSMS, an EMSP and a grid
+operator, in one process, already pointed at each other and already holding the
+certificates they need — until Ctrl+C.
 
 ```
   EV  ──ISO 15118──▶  ChargingStation  ──OCPP 2.1──▶  LocalController  ──OCPP 2.1──▶  CSMS
@@ -13,20 +13,25 @@ they need — until Ctrl+C.
   CSMS  ◀──OCPI 2.2.1──▶  EMSP
         the CSMS is a charge point operator beside being a CSMS; the two are
         peered at the start, the operator walking over
+
+  LocalController  ──OpenADR 3.1──▶  GridOperator
+                   ws://, its JSON messages; the controller is the VEN
+                   of the site's grid connection point
 ```
 
-Each of those five is its own repository and its own program, and each runs on
+Each of those six is its own repository and its own program, and each runs on
 its own:
 [EVCLI](https://github.com/OpenChargingCloud/EVCLI),
 [ChargingStationCLI](https://github.com/OpenChargingCloud/ChargingStationCLI),
 [LocalControllerCLI](https://github.com/OpenChargingCloud/LocalControllerCLI),
 [CSMSCLI](https://github.com/OpenChargingCloud/CSMSCLI) — and
-[EMSP](https://github.com/OpenChargingCloud/EMSP), which has no command-line
-program of its own yet. What none of them can do on its own is be a *site*. A
+[EMSP](https://github.com/OpenChargingCloud/EMSP) and
+[GridOperator](https://github.com/OpenChargingCloud/GridOperator), which have no
+command-line program of their own yet. What none of them can do on its own is be a *site*. A
 vehicle needs a station to charge at, a station needs something above it to
 report to, and all of them need certificates somebody has to have minted and
 handed out in the right directions. Separately that is an afternoon of copying
-files between five directories, and every step of it is a place to put the
+files between six directories, and every step of it is a place to put the
 wrong one.
 
 The EMSP is the other end of an OCPI roaming agreement, and the CSMS is the
@@ -38,7 +43,16 @@ Afterwards each end holds a token of the other's and both call the peering
 registered, which is what the *Roaming partners* page of either shows.
 `--no-emsp` leaves the provider out, and with it the peering.
 
-This repository is that wiring, and nothing else. It adds no sixth component.
+The grid operator is above the site's grid connection point, not above its
+stations. It knows the point (`GCP-1`) and the local controller behind it, as
+the VEN `ven-lc001`, and the local controller connects to its WebSocket port of
+OpenADR, in the JSON messages of OpenADR 3.1, signed in as `LC001` with a
+password made up at every start, as the OCPP passwords are. Through that
+connection the controller asks its VTN, and a limit the grid operator sends to
+the point on its *Grid limits* page is told to the controller as it is sent.
+`--no-grid` leaves the grid operator out, and with it that connection.
+
+This repository is that wiring, and nothing else. It adds no seventh component.
 
 
 ### What happens at a start
@@ -124,6 +138,7 @@ and says so at every start.
   local controller  http://127.0.0.1:2350/
   CSMS              http://127.0.0.1:2351/
   EMSP              http://127.0.0.1:2355/
+  grid operator     http://127.0.0.1:2356/
   OCPI versions     http://127.0.0.1:2355/ext/versions
 ```
 
@@ -133,7 +148,7 @@ password once. `--help` lists the rest.
 
 ### Ports
 
-Nine, counted off `--base-port` so that a second environment on one machine is
+Eleven, counted off `--base-port` so that a second environment on one machine is
 one switch away:
 
 | | |
@@ -147,23 +162,26 @@ one switch away:
 | `n+6` | the local controller's OCPP port |
 | `n+7` | the coupler's 10BASE-T1S bus under `--mcs` — a UDP multicast group, `239.151.18.1`, not a listener |
 | `n+8` | the EMSP's web interface, with its OCPI endpoints below `/ext` on the same port |
+| `n+9` | the grid operator's web interface, with its VTN of OpenADR 3.1 below `/openadr3` on the same port |
+| `n+10` | the grid operator's WebSocket port of OpenADR, where the local controller connects to it as its VEN |
 
 `n` is 2347 unless `--base-port` says otherwise, which is the vehicle's own port
 when it runs alone; `n+8` is then 2355, the EMSP's own port when it runs alone,
 and it comes after the bus rather than before it so that the seven ports the
 four original components take keep the numbers they always had. Nothing is
 listened on but the loopback address until `--any`; the multicast group is the
-one exception, because a bus that only one process can hear is not a bus.
+one exception, because a bus that only one process can hear is not a bus. The
+grid operator's two come after the EMSP's for the same reason.
 
 
-### One server instead of eight ports: `--shared`
+### One server instead of ten ports: `--shared`
 
 ```
 ./run.sh --shared
 ```
 
-One HTTP server on one port, the five web interfaces told apart by the first
-path segment, and **one sign-in for all five**:
+One HTTP server on one port, the six web interfaces told apart by the first
+path segment, and **one sign-in for all six**:
 
 ```
   http://127.0.0.1:2347/EV/...
@@ -171,6 +189,7 @@ path segment, and **one sign-in for all five**:
   http://127.0.0.1:2347/LocalController/...
   http://127.0.0.1:2347/CSMS/...
   http://127.0.0.1:2347/EMSP/...
+  http://127.0.0.1:2347/GridOperator/...
   http://127.0.0.1:2347/ext/login          ← one door
   http://127.0.0.1:2347/ext/versions       ← and the EMSP's OCPI, on the same API
 ```
@@ -185,9 +204,10 @@ with one set of accounts behind it, makes an account in `systemadmin` an
 administrator of every one of them at once, with each component still deciding
 for itself what that permits.
 
-The two OCPP ports stay where they were: they serve a different network, present
-different certificates and let in different callers, and one port would make one
-set of rules out of two.
+The two OCPP ports and the grid operator's WebSocket port of OpenADR stay where
+they were: they serve a different network, present different certificates and
+let in different callers, and one port would make one set of rules out of
+several.
 
 Own ports is the default, and deliberately so: five servers and five sets of
 accounts is what each of these programs does when it is started alone, so it is
@@ -419,6 +439,7 @@ data/
 ├── LocalController/     configuration.json, accounts/, ocpp-server-keys/, …
 ├── CSMS/                configuration.json, accounts/, ocpp-server-keys/, ocpi/, …
 ├── EMSP/                configuration.json, accounts/, ocpi/
+├── GridOperator/        configuration.json, accounts/, connections, websocket-logins.json, …
 └── pki/                 v2g/, ocpp/, pki.json
 ```
 
@@ -438,9 +459,10 @@ one. `--shared` puts the accounts in `data/accounts/` instead, once.
 | `EVChargingTestEnvironment/SharedAccounts.cs` | the one `HTTPExtAPI` behind `--shared` |
 | `EVChargingTestEnvironment/ConsoleMux.cs` | five event logs on one console, each line saying who said it |
 | `tools/build-webassets.sh` | the generated CSS the OCPP projects embed |
-| `libs/EV`, `libs/ChargingStation`, `libs/LocalController`, `libs/CSMS`, `libs/EMSP` | the five components themselves |
+| `libs/EV`, `libs/ChargingStation`, `libs/LocalController`, `libs/CSMS`, `libs/EMSP`, `libs/GridOperator` | the six components themselves |
 | `libs/WWCP_Node` | what all five are built on: the sign-in, the configuration file, the event log, the certificate store, the web interface they share |
 | `EVChargingTestEnvironment/ChargingTestEnvironment.Roaming.cs` | the OCPI peering between the CSMS and the EMSP |
+| `EVChargingTestEnvironment/ChargingTestEnvironment.GridOperator.cs` | the local controller's connection to the grid operator, at both ends |
 | `libs/WWCP_OCPI` | the OCPI library both ends are built on: the versions and credentials endpoints, the CPO and EMSP modules, the remote parties |
 | `libs/WWCP_ISO15118/WWCP_ISO15118_T1S` | the 10BASE-T1S bus under `--mcs`: PLCA, the sensors in the pins, the thermal monitor |
 

@@ -144,6 +144,13 @@ namespace cloud.charging.open.TestEnvironment
         /// </remarks>
         public Boolean             NoEMSP              { get; init; }
 
+        /// <summary>
+        /// Leave the grid operator out - and with it the local controller's
+        /// connection to it, over which it reads the limits of its grid
+        /// connection point in OpenADR 3.1.
+        /// </summary>
+        public Boolean             NoGridOperator      { get; init; }
+
         /// <summary>Leave the station's display out - it is a second HTTP server on a port of its own.</summary>
         public Boolean             NoKiosk             { get; init; }
 
@@ -302,6 +309,21 @@ namespace cloud.charging.open.TestEnvironment
         public IPPort  EMSPPort              => Shared ? SharedPort : IPPort.Parse((UInt16) (BasePort + 8));
 
         /// <summary>
+        /// The grid operator's web interface - and its VTN of OpenADR 3.1 over
+        /// HTTPS, below <c>/openadr3</c> on the same server.
+        /// </summary>
+        /// <remarks>
+        /// Beyond the EMSP, so that every port before it keeps its number.
+        /// </remarks>
+        public IPPort  GridOperatorPort      => Shared ? SharedPort : IPPort.Parse((UInt16) (BasePort + 9));
+
+        /// <summary>
+        /// The grid operator's WebSocket port of OpenADR, which the local
+        /// controller connects to as its VEN.
+        /// </summary>
+        public IPPort  GridOperatorVENPort   => IPPort.Parse((UInt16) (BasePort + 10));
+
+        /// <summary>
         /// The one port everything is on when they share a server.
         /// </summary>
         /// <remarks>
@@ -329,6 +351,9 @@ namespace cloud.charging.open.TestEnvironment
 
         /// <summary>What the EMSP's web interface sits below.</summary>
         public static readonly HTTPPath  EMSPBasePath        = HTTPPath.Parse("/EMSP");
+
+        /// <summary>What the grid operator's web interface sits below.</summary>
+        public static readonly HTTPPath  GridOperatorBasePath  = HTTPPath.Parse("/GridOperator");
 
         /// <summary>Where the accounts all five sign in against live.</summary>
         public static readonly HTTPPath  SharedExtAPIPath    = HTTPPath.Parse("/ext");
@@ -376,6 +401,9 @@ namespace cloud.charging.open.TestEnvironment
 
         /// <summary>The EMSP's directory.</summary>
         public String EMSPDirectory        => Path.Combine(DataPath, "EMSP");
+
+        /// <summary>The grid operator's directory.</summary>
+        public String GridOperatorDirectory  => Path.Combine(DataPath, "GridOperator");
 
         /// <summary>
         /// The accounts all five share, where they share a server.

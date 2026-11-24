@@ -38,12 +38,14 @@ using StationV2G     = cloud.charging.open.ChargingStation.ISO15118;
 using ControlConfig  = cloud.charging.open.LocalController.Configuration;
 using CSMSConfig     = cloud.charging.open.CSMS.Configuration;
 using EMSPConfig     = cloud.charging.open.EMSP.Configuration;
+using GridConfig     = cloud.charging.open.GridOperator.Configuration;
 
 using Vehicle        = cloud.charging.open.EV.EV;
 using Station        = cloud.charging.open.ChargingStation.ChargingStation;
 using Controller     = cloud.charging.open.LocalController.LocalController;
 using Management     = cloud.charging.open.CSMS.CSMS;
 using Provider       = cloud.charging.open.EMSP.EMSP;
+using Grid           = cloud.charging.open.GridOperator.GridOperator;
 
 #endregion
 
@@ -121,6 +123,12 @@ namespace cloud.charging.open.TestEnvironment
         /// <summary>The e-mobility service provider, unless it was left out.</summary>
         public Provider?    EMSP                { get; }
 
+        /// <summary>
+        /// The grid operator, unless it was left out: the VTN of OpenADR 3.1
+        /// the local controller connects to as its VEN.
+        /// </summary>
+        public Grid?        GridOperator        { get; }
+
         /// <summary>The one console the five of them write to, each line saying which of them it came from.</summary>
         public ConsoleMux   Console             { get; }
 
@@ -166,6 +174,9 @@ namespace cloud.charging.open.TestEnvironment
 
                 if (EMSP is not null)
                     yield return ("EMSP",              EMSP.WebInterfaceURL);
+
+                if (GridOperator is not null)
+                    yield return ("grid operator",     GridOperator.WebInterfaceURL);
 
             }
         }
@@ -220,6 +231,9 @@ namespace cloud.charging.open.TestEnvironment
             if (EMSP?.GeneratedPassword is { } emsp)
                 yield return ("the EMSP", emsp);
 
+            if (GridOperator?.GeneratedPassword is { } grid)
+                yield return ("the grid operator", grid);
+
             if (Controller?.GeneratedPassword is { } controller)
                 yield return ("the local controller", controller);
 
@@ -246,7 +260,8 @@ namespace cloud.charging.open.TestEnvironment
                                         Station                 Station,
                                         Controller?             Controller,
                                         Management              CSMS,
-                                        Provider?               EMSP)
+                                        Provider?               EMSP,
+                                        Grid?                   GridOperator)
         {
 
             this.options       = Options;
@@ -259,6 +274,7 @@ namespace cloud.charging.open.TestEnvironment
             this.Controller    = Controller;
             this.CSMS          = CSMS;
             this.EMSP          = EMSP;
+            this.GridOperator  = GridOperator;
 
         }
 
@@ -301,6 +317,9 @@ namespace cloud.charging.open.TestEnvironment
 
             if (!Options.NoEMSP)
                 Directory.CreateDirectory(Options.EMSPDirectory);
+
+            if (!Options.NoGridOperator)
+                Directory.CreateDirectory(Options.GridOperatorDirectory);
 
             WriteConfigurations(Options, certificates);
 
@@ -406,6 +425,33 @@ namespace cloud.charging.open.TestEnvironment
 
                              );
 
+            // Beside the CSMS, as the EMSP is: the grid operator is above the
+            // site's grid connection point, not above its stations. What it
+            // sends there, the local controller reads as its VEN - over the
+            // connection it is given to it in ConnectToTheGridOperator.
+            Grid? grid = null;
+
+            if (!Options.NoGridOperator)
+                grid       = new Grid(
+
+                                 DNSClient:            dnsClient,
+                                 HTTPServer:           sharedServer,
+                                 BasePath:             Options.Shared ? TestEnvironmentOptions.GridOperatorBasePath : null,
+                                 ExtAPI:               sharedExtAPI,
+                                 HTTPHostname:         Options.Address,
+                                 HTTPPort:             Options.GridOperatorPort,
+                                 AccountsPath:         Options.Shared
+                                                           ? Options.SharedAccountsPath
+                                                           : Path.Combine(Options.GridOperatorDirectory, "accounts"),
+                                 ConfigFile:           new WWCPConfigFile(
+                                                           Path.Combine(Options.GridOperatorDirectory, WWCPConfigFile.DefaultFileName)
+                                                       ),
+                                 Frontend:             FrontendOf(Options, "GridOperator", "GridOperator"),
+                                 LogToConsole:         false,
+                                 BridgeDebugLog:       false
+
+                             );
+
             Controller? controller = null;
 
             if (!Options.NoLocalController)
@@ -496,6 +542,9 @@ namespace cloud.charging.open.TestEnvironment
             if (emsp is not null)
                 console.Attach(emsp.Log,       "EMSP");
 
+            if (grid is not null)
+                console.Attach(grid.Log,       "GO");
+
             if (controller is not null)
                 console.Attach(controller.Log, "LC");
 
@@ -516,7 +565,8 @@ namespace cloud.charging.open.TestEnvironment
                        station,
                        controller,
                        csms,
-                       emsp
+                       emsp,
+                       grid
                    );
 
         }
@@ -564,8 +614,20 @@ namespace cloud.charging.open.TestEnvironment
             if (EMSP is not null)
                 await EMSP.Start();
 
+            // Before the local controller, which connects to it: its grid
+            // connection point and the local controller written down, and
+            // the connection between the two at both ends.
+            if (GridOperator is not null)
+            {
+                await GridOperator.Start();
+                ConnectToTheGridOperator();
+            }
+
             if (Controller is not null)
                 await Controller.Start();
+
+            // Once it runs: its VTN, asked through that connection.
+            await AskTheVTNThroughTheGridOperator();
 
             await Station.Start();
 
@@ -646,6 +708,9 @@ namespace cloud.charging.open.TestEnvironment
             if (EMSP is not null)
                 await EMSP.Stop();
 
+            if (GridOperator is not null)
+                await GridOperator.Stop();
+
             if (sharedServer is not null)
                 await sharedServer.Stop();
 
@@ -683,6 +748,9 @@ namespace cloud.charging.open.TestEnvironment
 
             if (EMSP is not null)
                 await EMSP.DisposeAsync();
+
+            if (GridOperator is not null)
+                await GridOperator.DisposeAsync();
 
         }
 
@@ -991,6 +1059,35 @@ namespace cloud.charging.open.TestEnvironment
                          out var upstreamError))
                 {
                     throw new InvalidOperationException($"The local controller could not be told where to report: {upstreamError}");
+                }
+
+            }
+
+            #endregion
+
+            #region The grid operator: its WebSocket port of OpenADR
+
+            // Where the local controller connects to as its VEN. Without TLS,
+            // and so with a password in the clear, on the loopback of this
+            // machine - as the OCPP ports are without --ocpp-tls.
+            if (!Options.NoGridOperator)
+            {
+
+                var gridFile = new WWCPConfigFile(
+                                   Path.Combine(Options.GridOperatorDirectory, WWCPConfigFile.DefaultFileName)
+                               );
+
+                if (!gridFile.TryMergeSection(
+                         GridConfig.VENServerConfiguration.SectionName,
+                         new JObject(
+                             new JProperty("enabled",               true),
+                             new JProperty("address",               Options.Address.ToString()),
+                             new JProperty("port",                  Options.GridOperatorVENPort.ToUInt16()),
+                             new JProperty("clientAuthentication",  new JArray("httpAuthWithoutTLS"))
+                         ),
+                         out var gridError))
+                {
+                    throw new InvalidOperationException($"The grid operator could not be told which port to let local controllers in at: {gridError}");
                 }
 
             }

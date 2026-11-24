@@ -157,7 +157,8 @@ namespace cloud.charging.open.TestEnvironment
                                           StationAccess.        Roles.Min(role => role.Name.Length),
                           LocalController.LocalControllerAccess.Roles.Min(role => role.Name.Length),
                           CSMS.           CSMSAccess.           Roles.Min(role => role.Name.Length),
-                          EMSP.           EMSPAccess.           Roles.Min(role => role.Name.Length)
+                          EMSP.           EMSPAccess.           Roles.Min(role => role.Name.Length),
+                          GridOperator.   GridOperatorAccess.   Roles.Min(role => role.Name.Length)
                       }.Min();
 
         #endregion
