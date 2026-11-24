@@ -71,6 +71,9 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         protected override String NodeName
             => "The charging station";
 
+        protected override Int64 MaxDownloadSize
+            => ChargingStation.ChargingStation.MaxDownloadSize;
+
         #endregion
 
     }

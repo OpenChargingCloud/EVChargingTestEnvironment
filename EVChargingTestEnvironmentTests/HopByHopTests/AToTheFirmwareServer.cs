@@ -21,6 +21,8 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 
+using Newtonsoft.Json.Linq;
+
 using NUnit.Framework;
 
 using org.GraphDefined.Vanaheimr.Hermod.HTTP;
@@ -73,6 +75,16 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
         private readonly ConcurrentQueue<(Int64? RequestId, FirmwareStatus Status)>  told        = new();
         private          Int32                                                       requestIds  = 200;
+
+        #endregion
+
+        #region (protected abstract) MaxDownloadSize
+
+        /// <summary>
+        /// The most an image may have that the kind of node takes, where its
+        /// configuration file does not say otherwise.
+        /// </summary>
+        protected abstract Int64 MaxDownloadSize { get; }
 
         #endregion
 
@@ -395,6 +407,82 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             Assert.Multiple(() => {
                 Assert.That(server.Requests.Select(request => request.Answered),  Is.EqualTo(new[] { 404 }),                                                  "A missing image was asked for again.");
                 Assert.That(Told(requestId),                                       Is.EqualTo(new[] { FirmwareStatus.Downloading, FirmwareStatus.DownloadFailed }));
+            });
+
+        }
+
+        #endregion
+
+        #region HTTP_AnImageLargerThanTheNodeTakes_IsDownloadFailed()
+
+        /// <summary>
+        /// The firmware server says the image has one byte more than the kind
+        /// of node takes (<see cref="MaxDownloadSize"/>) - its configuration file
+        /// says nothing of it. The node refuses it by "Content-Length", before
+        /// a byte is kept: DownloadFailed, not tried again, as the image would
+        /// be no smaller a moment later, and the node's log says how much it
+        /// takes.
+        /// </summary>
+        [Test]
+        public async Task HTTP_AnImageLargerThanTheNodeTakes_IsDownloadFailed()
+        {
+
+            var server                 = AFirmwareServer();
+
+            server.ClaimNextAs(MaxDownloadSize + 1, MaxDownloadSize + 1, MaxDownloadSize + 1);
+
+            var (response, requestId)  = await UpdateFirmware(server.URL(ImagePath), Retries: 2);
+
+            Accepted(response);
+
+            Assert.That(await UntilTold(requestId), Is.EqualTo(FirmwareStatus.DownloadFailed), $"An image too large was told as something else.{Story(node, csms)}");
+
+            Assert.Multiple(() => {
+                Assert.That(server.Requests,                  Has.Count.EqualTo(1),  "An image too large was asked for again.");
+                Assert.That(Told(requestId),                  Is.EqualTo(new[] { FirmwareStatus.Downloading, FirmwareStatus.DownloadFailed }));
+                Assert.That(File.Exists(Staged(requestId)),   Is.False,              "The node keeps something of an image too large.");
+                Assert.That(node!.Log.Recent(200).Select(entry => entry.Message),
+                            Has.Some.Contains($"at most {MaxDownloadSize} are taken"), "The node's log does not say how much it takes.");
+            });
+
+        }
+
+        #endregion
+
+        #region HTTP_ItsConfigurationSaysHowLargeAnImageMayBe()
+
+        /// <summary>
+        /// "maxDownloadSize" of the node's configuration file goes before what
+        /// the kind of node takes, from the next download on: an image of just
+        /// as many bytes is downloaded, and with one byte less allowed the same
+        /// image is DownloadFailed, after a single GET.
+        /// </summary>
+        [Test]
+        public async Task HTTP_ItsConfigurationSaysHowLargeAnImageMayBe()
+        {
+
+            var server = AFirmwareServer();
+
+            Assert.That(node!.ConfigFile.TryReplaceSection(FileTransfers.MaxDownloadSizeKey, new JValue(Image.Length), out var error), Is.True, error);
+
+            var (justAsLarge, justAsLargeId) = await UpdateFirmware(server.URL(ImagePath));
+
+            Accepted(justAsLarge);
+
+            Assert.That(await UntilTold(justAsLargeId), Is.EqualTo(FirmwareStatus.Downloaded), $"An image just as large as allowed was not downloaded.{Story(node, csms)}");
+            Assert.That(File.ReadAllBytes(Staged(justAsLargeId)), Is.EqualTo(Image));
+
+            Assert.That(node.ConfigFile.TryReplaceSection(FileTransfers.MaxDownloadSizeKey, new JValue(Image.Length - 1), out error), Is.True, error);
+
+            var (tooLarge, tooLargeId) = await UpdateFirmware(server.URL(ImagePath), Retries: 2);
+
+            Accepted(tooLarge);
+
+            Assert.That(await UntilTold(tooLargeId), Is.EqualTo(FirmwareStatus.DownloadFailed), $"An image larger than allowed was told as something else.{Story(node, csms)}");
+
+            Assert.Multiple(() => {
+                Assert.That(server.Requests,                  Has.Count.EqualTo(2),  "An image larger than allowed was asked for again.");
+                Assert.That(File.Exists(Staged(tooLargeId)),  Is.False,              "The node keeps something of an image larger than allowed.");
             });
 
         }

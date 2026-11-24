@@ -347,6 +347,24 @@ des Transports.
 - Ein Download muss unterhalb des Verzeichnisses liegen und eine Datei nennen.
   Eine URL, die auf `/` endet, ist `InvalidURL`.
 
+Wie groß ein Image höchstens sein darf, setzt jeder Knoten selbst, und
+`maxDownloadSize` in seiner Konfiguration geht dem vor:
+
+```json
+{ "maxDownloadSize": 536870912 }
+```
+
+| Knoten | Grenze ohne Konfiguration | Warum |
+|---|---|---|
+| Ladestation | 256 MiB (`ChargingStation.MaxDownloadSize`) | ein Firmware-Image einer Station, mit Luft, und nicht so viel, dass eine falsche URL die Platte füllt |
+| LocalController | 1 GiB (`LocalController.MaxDownloadSize`) | das Image eines Controllers trägt ein ganzes System |
+
+- Gelesen wird bei jedem Download, eine Änderung gilt also ab dem nächsten,
+  ohne Neustart. Alle Versuche eines Downloads haben dieselbe Grenze.
+- Ein Wert, der keine ganze Zahl über null ist (0, negativ, Bruch, Text),
+  wird übergangen. Dann gilt die Grenze des Knotens, und das Log sagt warum.
+- Die Grenze gilt für SFTP und HTTP(S) gleich.
+
 ### 7.3 Was gebaut ist
 
 **WWCP_Node**
@@ -366,6 +384,13 @@ des Transports.
 - Der Dateiname kommt aus dem letzten Pfadsegment.
 - Vor einem geplanten Download (`RetrieveTimestamp`) wird beim Fälligwerden
   wieder über den richtigen Weg geurteilt.
+- `FileTransfers.TheMaxDownloadSize`: `maxDownloadSize` der Konfiguration,
+  sonst `MaxDownloadSize` des Knotens (`MaxDownloadSizeKey`).
+
+**ChargingStation und LocalController**
+
+- `MaxDownloadSize` als Konstante, beim Bau der `DeviceModelBridge` in
+  `FileTransfers.MaxDownloadSize` gesetzt.
 
 **Superprojekt**
 
@@ -378,14 +403,15 @@ des Transports.
   - `GET` mit `Range`, also 206 und 416;
   - `BreakNextAfter(…)`: bricht den Body nach N Bytes ab;
   - `IgnoresRange`: ein Server ohne Ranges;
-  - bei `AnswerNext(302)` ein `Location` zu einem anderen Host.
+  - bei `AnswerNext(302)` ein `Location` zu einem anderen Host;
+  - `ClaimNextAs(…)`: ein `Content-Length`, das größer ist als die Datei.
 - `AToTheFirmwareServer.cs` enthält alle Fälle. `CS_2_Firmware.cs` und
   `LC_2_Firmware.cs` erzeugen nur den Knoten.
 
 ### 7.4 Tests
 
-`CS_2_Firmware` und `LC_2_Firmware` je 9 Fälle, zusammen 18, alle grün. Mit
-`CS_2_Log` und `LC_2_Log` sind es 44.
+`CS_2_Firmware` und `LC_2_Firmware` je 11 Fälle, zusammen 22, alle grün. Mit
+`CS_2_Log` und `LC_2_Log` sind es 48.
 
 | Test | Was er zeigt |
 |---|---|
@@ -395,12 +421,16 @@ des Transports.
 | `HTTP_AServerWithoutRanges_IsReadFromWhereItStopped` | Server ohne Ranges: zweimal 200. Der schon geholte Teil wird übergangen, nichts ist doppelt |
 | `HTTP_TriesAgain_AfterTheServerFailed` | 503, dann 200. `DownloadPaused` dazwischen |
 | `HTTP_AMissingImage_IsDownloadFailed` | 404: `DownloadFailed`, kein zweiter Versuch trotz `Retries: 3` |
+| `HTTP_AnImageLargerThanTheNodeTakes_IsDownloadFailed` | Der Server sagt ein Byte mehr als die Grenze des Knotens (256 MiB bzw. 1 GiB), ohne Konfiguration: `DownloadFailed` nach einer Anfrage trotz `Retries: 2`, nichts im Staging-Verzeichnis. Das Log nennt die Grenze |
+| `HTTP_ItsConfigurationSaysHowLargeAnImageMayBe` | `maxDownloadSize` genau so groß wie das Image: `Downloaded`. Ein Byte weniger: `DownloadFailed` nach einer Anfrage |
 | `HTTP_ARedirect_IsNotFollowed` | 302 zu einem anderen Host: `DownloadFailed`, eine Anfrage. Das Log sagt „is not followed“ |
 | `HTTPS_FetchesNothing_FromAServerItDoesNotBelieve` | Zertifikat nicht geglaubt: keine Anfrage, eine Verbindung, nichts im Staging-Verzeichnis |
 | `HTTP_RefusesWhatItsConfigurationDoesNotName` | Anderes Verzeichnis, anderer Port, Server nur für Uploads: `FileServerNotPermitted`. URL ohne Datei, Query: `InvalidURL`. `ftp://`: `NotSupported`. Kein Server wird erreicht, nichts wird gemeldet |
 
 Daneben grün: WWCP_Node `FileTransfer`/`Sftp` (51), WWCP_OCPP_Node
-`FileTransferBridgeTests` (13).
+`FileTransferBridgeTests` (14, darunter
+`TheMaxDownloadSize_IsItsConfigurations_OrElseTheNodes` für falsche Werte und
+Zahlen über `Int32`).
 
 ### 7.5 Offen
 
@@ -410,10 +440,10 @@ Daneben grün: WWCP_Node `FileTransfer`/`Sftp` (51), WWCP_OCPP_Node
   Der Knoten übergeht den Teil, den er schon hat, prüft aber nicht, ob es noch
   dieselbe Datei ist (kein `If-Range` mit ETag). Ob das Image echt ist,
   entscheidet erst die Signatur danach.
-- **`FileTransfers.MaxDownloadSize`** setzt bei CS und LC nichts: Es gibt dafür
-  keine Konfiguration und keine Variable im Device Model. Ohne Grenze wird
-  geholt, so viel der Server sagt. Die Prüfung selbst ist gebaut, aber ohne
-  Test Ende zu Ende.
+- ~~**`FileTransfers.MaxDownloadSize`** setzt bei CS und LC nichts.~~ Erledigt,
+  siehe 7.2. Noch offen: Das CSMS kann die Grenze nicht lesen, es gibt keine
+  Variable im Device Model. Ohne `Content-Length` (chunked) greift die Prüfung
+  erst beim Lesen. Das ist in WWCP_Node gebaut, aber ohne Test Ende zu Ende.
 - **`SignedUpdateFirmware` und `UpdateFirmware` von OCPP 1.6 über HTTP** laufen
   durch dasselbe `StartDownload`, haben aber keinen Test Ende zu Ende.
 - **Firmware über SFTP** hat im Superprojekt noch keinen Test wie

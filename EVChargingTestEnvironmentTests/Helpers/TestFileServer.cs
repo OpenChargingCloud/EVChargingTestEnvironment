@@ -39,7 +39,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
     /// a file with a GET, from a byte on where a Range asks so (206). It may
     /// ask for HTTP Basic authentication, may be told to answer the next
     /// requests with a status of the test's choosing, to break off a GET after
-    /// some bytes, and to pass over a Range.
+    /// some bytes, to claim a file larger than it is, and to pass over a Range.
     /// </summary>
     /// <remarks>
     /// One request per connection, as the node's transfers make one request
@@ -69,6 +69,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
         private readonly Task                             accepting;
         private readonly ConcurrentQueue<Int32>           answers    = new();
         private readonly ConcurrentQueue<Int32>           breaks     = new();
+        private readonly ConcurrentQueue<Int64>           claims     = new();
 
         #endregion
 
@@ -186,6 +187,17 @@ namespace cloud.charging.open.TestEnvironment.Tests
                 breaks.Enqueue(bytes);
         }
 
+        /// <summary>
+        /// Claim in the next GETs that serve a whole file that it has the given
+        /// number of bytes, one each - "Content-Length" says so -, and still
+        /// send only the file, then close the connection.
+        /// </summary>
+        public void ClaimNextAs(params Int64[] Lengths)
+        {
+            foreach (var length in Lengths)
+                claims.Enqueue(length);
+        }
+
         #endregion
 
         #region FilesIn(Directory)
@@ -301,10 +313,15 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
                 Requests.Enqueue(new Received(method, path, headers, body, status));
 
+                // A whole file claimed larger than it is.
+                Int64 length    = status == 200 && method == "GET" && content.Length > 0 && claims.TryDequeue(out var claimed)
+                                      ? claimed
+                                      : content.Length;
+
                 var response    = $"HTTP/1.1 {status} {Reason(status)}\r\n" +
                                   (status == 401 ? "WWW-Authenticate: Basic realm=\"files\"\r\n" : "") +
                                   extra +
-                                  $"Content-Length: {content.Length}\r\n" +
+                                  $"Content-Length: {length}\r\n" +
                                   "Connection: close\r\n\r\n";
 
                 await stream.WriteAsync(Encoding.ASCII.GetBytes(response), stop.Token);

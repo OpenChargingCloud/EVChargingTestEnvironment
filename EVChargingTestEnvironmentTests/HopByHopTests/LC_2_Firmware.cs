@@ -72,6 +72,9 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         protected override String NodeName
             => "The local controller";
 
+        protected override Int64 MaxDownloadSize
+            => LocalController.LocalController.MaxDownloadSize;
+
         /// <summary>
         /// In the overlay network what the local controller sends in its own name
         /// is taken only from a login marked as one of its kind.
