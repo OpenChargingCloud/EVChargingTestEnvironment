@@ -367,11 +367,11 @@ Servers, ein Befehl zum Auflisten und die Unterklassen von
   `ocpiVersion` durch; vorher ließ sich eine CPO-Verbindung über die API
   nicht anlegen.
 - Die Seite der Verbindungen kennt die Typen von OCPI, Modbus und
-  OpenADR (`useOf`, wie `ConnectionEntry.UseOf`). Sie fragt nach der
-  Version von OCPI, der Bindung von OpenADR und dem VEN, jeweils nur auf
-  einem Knoten, der solche Verbindungen hat, und schickt jedes Feld nur
-  für den Typ, der es trägt. Die Frage nach OCPP entfällt, wo der Knoten
-  keine OCPP-Verbindung hat.
+  OpenADR (`useOf`, wie `ConnectionEntry.UseOf`). Das Formular fragt,
+  was der gewählte Typ trägt: die Version von OCPP, die von OCPI, die
+  Bindung von OpenADR, bei einem VEN den VEN. Bei einem Wechsel des Typs
+  zeichnet es sich sofort neu (`pickType`); Getipptes bleibt stehen.
+  Gesendet wird jedes Feld nur für den Typ, der es trägt.
 - `WebSocketLoginRoutes.WhyGroupStays`: eine Gruppe, die der Knoten
   braucht, wird mit `409` abgelehnt. Der Zähler nutzt das für die vier
   SunSpec-Gruppen; außerhalb der API entfernte Gruppen legt er weiter neu
@@ -390,7 +390,6 @@ Servers, ein Befehl zum Auflisten und die Unterklassen von
 
 ### 10.3 Offen
 
-- Das Formular der Verbindungen zeichnet sich bei einem Wechsel des Typs
-  nicht neu. Die Felder für OCPI, OpenADR und VEN stehen deshalb da, wo
-  der Knoten solche Typen hat, und werden nur für den passenden Typ
-  geschickt.
+- Das Feld des VEN folgt dem Typ, nicht aber dem Häkchen "Die andere
+  Seite verbindet sich": Es steht bei jedem VEN da und wird nur für
+  einen VEN geschickt, der sich verbindet.
