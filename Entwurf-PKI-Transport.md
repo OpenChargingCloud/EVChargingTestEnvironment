@@ -333,5 +333,64 @@ mit einem Knoten verbindet:
 
 - `PUT` des Servers der Registrierungsstellen (Port, TLS, SSH) zur
   Laufzeit.
-- Netzbetreiber, EMSP und Zähler auf die gemeinsamen Routen und Seiten
-  umstellen.
+
+## 10. Netzbetreiber, EMSP und Zähler auf den gemeinsamen Teilen
+
+Die drei hatten Verbindungen, Logins und angenommene Ketten schon
+(`ConnectionStore`, `WebSocketLogins`, `ClientTrustStore`), aber keine
+Routen, Seiten und Befehle dafür. Jetzt wie die PKI in §9:
+`RegisterConnectionRoutes`, `RegisterWebSocketLoginRoutes`, ein `GET` des
+Servers, ein Befehl zum Auflisten und die Unterklassen von
+`LoginKeysCommand`/`LoginPinsCommand`.
+
+| Knoten | Ressource | Wurzel der Login-Routen | Login heißt | Befehle |
+|---|---|---|---|---|
+| Netzbetreiber | `openadr` (bestehend) | `v1/configuration/ven-server` | local controller | `vens`, `venKeys`, `venPins` |
+| EMSP | `partners` (bestehend) | `v1/configuration/ocpi-server` | charge point operator | `cpos`, `cpoKeys`, `cpoPins` |
+| Zähler | `meterReaders` (neu: Viewer und Auditor lesen, nur Admins ändern) | `v1/configuration/reader-server` | meter reader | `readers`, `readerKeys`, `readerPins` |
+
+- Der `GET` des Servers sagt Konfiguration, Zustand (`running`, `tls`,
+  `ssh`, `sshPort`) und wer verbunden ist; beim Zähler dazu die
+  SunSpec-Rolle jedes Logins (`roles`).
+- `cpoKeys` und `readerKeys` gehen über das bestehende
+  `TryAddCPOSSHKey`/`TryAddMeterReaderSSHKey`: ein Name, der auch ein
+  Konto ist, wird abgelehnt.
+- Der Zähler hat jetzt einen `SshKey` (`meter@<Rechner>`), weil das JSON
+  der Verbindungen ihn nennt.
+- `localControllers` des Netzbetreibers bleibt, was es war: die
+  HTTPS-Logins mit Client-ID und Secret. Die WebSocket-/SSH-Seite ist
+  `vens`.
+
+### 10.1 WWCP_Node
+
+- `POST configuration/connections` und `.../update` reichen
+  `ocpiVersion` durch; vorher ließ sich eine CPO-Verbindung über die API
+  nicht anlegen.
+- Die Seite der Verbindungen kennt die Typen von OCPI, Modbus und
+  OpenADR (`useOf`, wie `ConnectionEntry.UseOf`). Sie fragt nach der
+  Version von OCPI, der Bindung von OpenADR und dem VEN, jeweils nur auf
+  einem Knoten, der solche Verbindungen hat, und schickt jedes Feld nur
+  für den Typ, der es trägt. Die Frage nach OCPP entfällt, wo der Knoten
+  keine OCPP-Verbindung hat.
+- `WebSocketLoginRoutes.WhyGroupStays`: eine Gruppe, die der Knoten
+  braucht, wird mit `409` abgelehnt. Der Zähler nutzt das für die vier
+  SunSpec-Gruppen; außerhalb der API entfernte Gruppen legt er weiter neu
+  an.
+- Rechte im Frontend ohne Rücksicht auf Groß- und Kleinschreibung
+  (`holds`), wie der Knoten sie nimmt. Er sagt
+  `registrationauthorities:read`. Die Menüeinträge der PKI fragten nach
+  `registrationAuthorities:read` und erschienen deshalb nie.
+
+### 10.2 Tests
+
+- Netzbetreiber `VENServerAPITests`, EMSP `OCPIServerAPITests`, Zähler
+  `MeterReaderAPITests`: Routen, Rechte nach Rolle, ein über HTTP
+  angelegter Login meldet sich wirklich an, und die Befehle.
+- WWCP_Node, Frontend: die Felder für OCPI, OpenADR und VEN sowie `holds`.
+
+### 10.3 Offen
+
+- Das Formular der Verbindungen zeichnet sich bei einem Wechsel des Typs
+  nicht neu. Die Felder für OCPI, OpenADR und VEN stehen deshalb da, wo
+  der Knoten solche Typen hat, und werden nur für den passenden Typ
+  geschickt.
