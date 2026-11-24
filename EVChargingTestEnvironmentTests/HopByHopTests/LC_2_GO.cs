@@ -234,12 +234,50 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         private async Task RestartTheController()
         {
 
-            await controller!.Stop();
-            await controller.DisposeAsync();
+            await StopTheController();
 
             controller = NewController();
 
             await controller.Start();
+
+        }
+
+        /// <summary>
+        /// The local controller stops.
+        /// </summary>
+        private async Task StopTheController()
+        {
+
+            await controller!.Stop();
+            await controller.DisposeAsync();
+
+        }
+
+        #endregion
+
+        #region (private) SwitchTheConnection(Inbound, On)
+
+        /// <summary>
+        /// The grid operator switches its connection of a VEN on or off.
+        /// </summary>
+        private void SwitchTheConnection(String   Inbound,
+                                         Boolean  On)
+        {
+
+            var entry = grid!.Connections.Connections.First(entry => entry.Id == Inbound);
+
+            Assert.That(grid.Connections.TryUpdateConnection(entry.Id,
+                                                             entry.Description,
+                                                             entry.URL,
+                                                             "VEN",
+                                                             On,
+                                                             null,
+                                                             null,
+                                                             out var error,
+                                                             Inbound:         true,
+                                                             OpenADRBinding:  entry.OpenADRBinding == OpenADRBinding.REST ? bindingREST : bindingMessages,
+                                                             VEN:             entry.VEN),
+                        Is.True, error);
 
         }
 
@@ -1038,6 +1076,117 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
                 Assert.That(problem,                    Is.Not.Null,  $"The VTN answered a VEN it lets sign in no more.{Story(controller, grid)}");
                 Assert.That(controller.ImportLimitNow,  Is.Null,      "A VEN the grid operator lets sign in no more read the limit of its point.");
             });
+
+        }
+
+        #endregion
+
+        #region OpenADR_AConnectionSwitchedOff_IsLetGoOf_AndOnAgain_LetsItIn(Transport, Binding)
+
+        /// <summary>
+        /// The grid operator switches off the connection a controller is in over:
+        /// the controller is let go of at once - not when its connection drops
+        /// some time - and is not let in again; switched on, it connects again
+        /// and reads the limit of its point. Over SSH it connects again by
+        /// itself; over a WebSocket the refusal of the door was final to it, as
+        /// every refusal of a WebSocket is, and it connects again once it starts
+        /// anew.
+        /// </summary>
+        [TestCase("ws",  bindingREST)]
+        [TestCase("ws",  bindingMessages)]
+        [TestCase("ssh", bindingREST)]
+        [TestCase("ssh", bindingMessages)]
+        public async Task OpenADR_AConnectionSwitchedOff_IsLetGoOf_AndOnAgain_LetsItIn(String Transport, String Binding)
+        {
+
+            var grid        = this.grid!;
+            var controller  = this.controller!;
+
+            var (login, _, connection, inbound) = await TheControllerConnects(authPassword, Transport, Binding: Binding);
+
+            SwitchTheConnection(inbound, On: false);
+
+            await Until(() => !IsConnectedAt(grid, login),                                   $"the grid operator letting go of '{login}'",            controller, grid);
+            await Until(() => StatusOf(controller, connection) != ConnectionStatus.Connected, "the controller seeing its connection go",             controller, grid);
+
+            // Long enough for the controller to have tried again, after three seconds.
+            await Task.Delay(TimeSpan.FromSeconds(4));
+
+            Assert.Multiple(() => {
+                Assert.That(IsConnectedAt(grid, login),             Is.False,                                   $"The grid operator let '{login}' in again over a connection switched off.{Story(controller, grid)}");
+                Assert.That(StatusOf(grid, inbound),                Is.Not.EqualTo(ConnectionStatus.Connected));
+                Assert.That(StatusOf(controller, connection),       Is.Not.EqualTo(ConnectionStatus.Connected));
+            });
+
+            SwitchTheConnection(inbound, On: true);
+
+            if (Transport != "ssh")
+            {
+                Assert.That(StatusOf(controller, connection), Is.EqualTo(ConnectionStatus.Refused), $"The refusal of the door was not final to the controller.{Story(controller, grid)}");
+                await RestartTheController();
+                controller = this.controller!;
+            }
+
+            await Until(() => StatusOf(controller, connection) == ConnectionStatus.Connected, "the controller connecting again once its connection is on", controller, grid);
+            await Until(() => StatusOf(grid,       inbound)    == ConnectionStatus.Connected, "the grid operator letting it in again",                     controller, grid);
+
+            Assert.That(grid.TrySendLimit(new JObject(new JProperty("kind",                   "IMPORT_CAPACITY_LIMIT"),
+                                                      new JProperty("limitKW",                77),
+                                                      new JProperty("durationMinutes",        60),
+                                                      new JProperty("gridConnectionPointId",  PointOne)),
+                                          "test", out _, out var error, out _),
+                        Is.True, error);
+
+            if (Binding == bindingREST)
+                Assert.That(await controller.PollOpenADR(), Is.Null, "The controller did not ask the VTN through its connection, on again.");
+
+            await Until(() => controller.ImportLimitNow?.KW == 77, "the controller reading the limit over its connection, on again", controller, grid);
+
+        }
+
+        #endregion
+
+        #region OpenADR_WhatCameWhileTheControllerWasOut_IsToldOnceItIsIn(Transport)
+
+        /// <summary>
+        /// A controller subscribed over its connection stops; a limit sent to its
+        /// point meanwhile waits at the grid operator, and is told to it by
+        /// Notify once it is started and in again - and nothing waits then.
+        /// </summary>
+        [TestCase("ws")]
+        [TestCase("ssh")]
+        public async Task OpenADR_WhatCameWhileTheControllerWasOut_IsToldOnceItIsIn(String Transport)
+        {
+
+            var grid = this.grid!;
+
+            var (_, ven, connection, inbound) = await TheControllerConnects(authPassword, Transport, Binding: bindingMessages);
+
+            await Until(() => grid.Subscriptions.Of(ven).Count == 1, $"'{ven}' subscribing to the events over its connection", this.controller, grid);
+
+            await StopTheController();
+
+            await Until(() => StatusOf(grid, inbound) != ConnectionStatus.Connected, "the grid operator seeing the controller go", grid);
+
+            Assert.That(grid.TrySendLimit(new JObject(new JProperty("kind",                   "IMPORT_CAPACITY_LIMIT"),
+                                                      new JProperty("limitKW",                88),
+                                                      new JProperty("durationMinutes",        60),
+                                                      new JProperty("gridConnectionPointId",  PointOne)),
+                                          "test", out _, out var error, out _),
+                        Is.True, error);
+
+            await Until(() => grid.NotificationsWaitingFor(inbound) == 1, "the limit waiting for the controller", grid);
+
+            controller = NewController();
+
+            await controller.Start();
+
+            var started = controller;
+
+            await Until(() => StatusOf(started, connection) == ConnectionStatus.Connected, "the controller connecting again",                    started, grid);
+            await Until(() => grid.NotificationsWaitingFor(inbound) == 0,                  "the limit that waited being told to the controller", started, grid);
+            await Until(() => started.OpenADRNotificationsReceived >= 1,                   "the controller being told of the limit that waited",   started, grid);
+            await Until(() => started.ImportLimitNow?.KW == 88,                            "the controller reading the limit",                     started, grid);
 
         }
 

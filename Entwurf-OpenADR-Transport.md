@@ -654,3 +654,113 @@ Die Punkte aus 9.6 bleiben offen:
 - Die Weboberflächen zeigen Bindung und Abos nicht.
 - Seiten, HTTP-API und Kommandozeile für Verbindungen und WebSocket-Logins
   des Netzbetreibers fehlen.
+
+## 11. Die offenen Punkte aus 9.6
+
+Stand 2026-11-24.
+
+### 11.1 Ein ausgeschalteter Eintrag schließt die offene Verbindung
+
+Der Netzbetreiber führt jede offene Verbindung eines VEN mit einem Abbild
+dessen, was sie beim Hereinkommen hereingelassen hat: Eintrag, Bindung,
+Transport, Login und VEN. Ein Abbild ist nötig, weil der Store einen Eintrag
+an Ort und Stelle ändert.
+
+Ändert sich der Store (`OnConnectionsChanged`), lässt der Netzbetreiber jede
+Verbindung los, deren Eintrag
+
+- entfernt oder ausgeschaltet ist, oder
+- jetzt eine andere Bindung, einen anderen Transport, einen anderen Login oder
+  einen anderen VEN nennt.
+
+Das gilt für den REST-Tunnel wie für die Nachrichten, über WebSocket wie über
+SSH. Ein WebSocket wird mit `PolicyViolation` geschlossen, eine
+SSH-Nachrichtenverbindung mit `PolicyViolation`. Ein SSH-Tunnel endet, indem
+sein Subsystem endet. Der Store meldet Änderungen einen Augenblick später
+(`Task.Run`), das Loslassen folgt also kurz nach der Änderung.
+
+Danach versucht der LocalController es nach drei Sekunden neu:
+
+- **Über SSH** wird er wieder hereingelassen, sobald der Eintrag wieder an ist.
+- **Über WebSocket** antwortet die Tür auf einen ausgeschalteten Eintrag mit
+  einer Abweisung. Eine Abweisung ist für WWCP_Node bei jedem WebSocket
+  endgültig, der LocalController versucht es nicht wieder. Er verbindet sich
+  erst neu, wenn er neu startet oder sein eigener Eintrag geändert wird. Der
+  Test `LC_2_GO` hält das fest. Ob diese Regel für OpenADR anders sein soll,
+  ist offen (11.5).
+
+Einen entzogenen VEN (`TryRemoveLocalController`) lässt der Netzbetreiber
+nicht los. Jede seiner Anfragen wird abgelehnt, wie in Schritt D.
+
+### 11.2 Notify wird gepuffert
+
+Jede Benachrichtigung über eine Nachrichtenverbindung geht durch eine
+Warteschlange je Verbindung des Netzbetreibers. Sie wird der Reihe nach
+zugestellt, eine nach der anderen.
+
+- **Ist der VEN nicht verbunden**, wartet die Benachrichtigung. Höchstens
+  `NotificationsKeptPerConnection` (100) warten, die älteste fällt zuerst weg.
+  Jede wartet höchstens `NotificationsKeptFor` (eine Stunde).
+- **Erst zustellen, wenn der VEN gefragt hat.** Über eine neue Verbindung
+  stellt der Netzbetreiber erst zu, nachdem der VEN darüber einmal gefragt
+  hat. Vorher ist der VEN womöglich nicht bereit: Der LocalController legt
+  seinen Endpunkt erst an, wenn die Verbindung gemeldet ist, und ein sofortiges
+  `Notify` ging dabei verloren. Der LocalController fragt beim Aufbau sofort
+  nach, deshalb verzögert das nichts.
+- Bricht die Verbindung während der Zustellung ab, bleibt die Benachrichtigung
+  in der Warteschlange. Antwortet der VEN mit einem Fehler oder gar nicht,
+  fällt sie weg.
+- Eine Benachrichtigung, deren Abo nicht mehr dieser Verbindung gehört, fällt
+  weg.
+- Für einen entfernten oder ausgeschalteten Eintrag wartet nichts. Was schon
+  wartete, fällt mit dem Ausschalten weg.
+- Die Warteschlange liegt nur im Speicher. Ein Neustart des Netzbetreibers
+  leert sie, wie seine Abos.
+
+`NotificationsWaitingFor(ConnectionId)` sagt, wie viel wartet.
+
+### 11.3 Die Weboberflächen
+
+- **Netzbetreiber, Seite „Local Controllers“:** Unter jedem VEN stehen seine
+  Verbindungen und seine Abos.
+  - Je Verbindung: Transport, Bindung, an oder aus, Zustand und wie viele
+    Benachrichtigungen warten.
+  - Je Abo: Objekte, Operationen, Callback, und ob es über die Verbindung oder
+    an einen Webhook geht.
+  - Die JSON-API liefert dazu unter `localControllers` je VEN `connections`
+    und `subscriptions` (jetzt eine Liste statt einer Zahl). Der Bearer-Token
+    eines Webhooks steht nicht darin.
+- **LocalController, Statusseite:** Unter „Grid limits“ steht, über welche
+  Verbindung und Bindung der VTN erreicht wird, ob ein Abo besteht, wie viele
+  Benachrichtigungen kamen und wann zuletzt gefragt wurde. `/state` liefert
+  dazu `transport`, `binding`, `subscribed` und `notificationsReceived`.
+- **Gemeinsame Verbindungsseite:** Die Bindung auswählen lässt sich dort noch
+  nicht. Eine andere Sitzung verlegt die Seite gerade nach WWCP_Node
+  (`Frontend/src/connecting`) und baut dort Verbindungs- und Login-Seiten. Die
+  Auswahl `openADRBinding` (messages/rest) für die Typen GridOperator und VEN
+  gehört in diese verlegte Seite.
+
+### 11.4 Tests
+
+- **Netzbetreiber**, VEN-Tests (29, davon 15 neu):
+  - eine Verbindung wird ausgeschaltet, auf REST umgestellt oder entfernt,
+    über ws und ssh; der andere VEN bleibt;
+  - aus und wieder an;
+  - ein Tunnel wird ausgeschaltet, umgestellt oder entfernt;
+  - was wartet, wird erst nach der ersten Frage und in Reihenfolge
+    zugestellt;
+  - Obergrenze und Ablauf;
+  - ein ausgeschalteter Eintrag verwirft, was wartet.
+- **`LC_2_GO`** (6 neu):
+  - der Netzbetreiber schaltet die Verbindung aus und wieder an, über ws und
+    ssh in beiden Bindungen;
+  - ein Limit wartet, solange der LocalController aus ist, und kommt nach dem
+    Start per `Notify`.
+
+### 11.5 Offen
+
+- MQTT ist zurückgestellt (Entscheidung 2026-11-24). Wenn es kommt, läuft der
+  Broker extern, und der Netzbetreiber veröffentlicht als Client.
+- Ob eine Abweisung an der WebSocket-Tür für eine OpenADR-Verbindung endgültig
+  bleiben soll (11.1).
+- Die Auswahl der Bindung auf der gemeinsamen Verbindungsseite (11.3).
