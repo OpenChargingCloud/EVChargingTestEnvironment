@@ -682,12 +682,10 @@ sein Subsystem endet. Der Store meldet Änderungen einen Augenblick später
 Danach versucht der LocalController es nach drei Sekunden neu:
 
 - **Über SSH** wird er wieder hereingelassen, sobald der Eintrag wieder an ist.
-- **Über WebSocket** antwortet die Tür auf einen ausgeschalteten Eintrag mit
-  einer Abweisung. Eine Abweisung ist für WWCP_Node bei jedem WebSocket
-  endgültig, der LocalController versucht es nicht wieder. Er verbindet sich
-  erst neu, wenn er neu startet oder sein eigener Eintrag geändert wird. Der
-  Test `LC_2_GO` hält das fest. Ob diese Regel für OpenADR anders sein soll,
-  ist offen (11.5).
+- **Über WebSocket** weist die Tür einen ausgeschalteten Eintrag nur für
+  jetzt ab, mit `503` und `Retry-After`. Der LocalController versucht es
+  weiter und kommt von selbst wieder, sobald der Eintrag wieder an ist
+  (Abschnitt 12).
 
 Einen entzogenen VEN (`TryRemoveLocalController`) lässt der Netzbetreiber
 nicht los. Jede seiner Anfragen wird abgelehnt, wie in Schritt D.
@@ -761,6 +759,40 @@ zugestellt, eine nach der anderen.
 
 - MQTT ist zurückgestellt (Entscheidung 2026-11-24). Wenn es kommt, läuft der
   Broker extern, und der Netzbetreiber veröffentlicht als Client.
-- Ob eine Abweisung an der WebSocket-Tür für eine OpenADR-Verbindung endgültig
-  bleiben soll (11.1).
+- ~~Ob eine Abweisung an der WebSocket-Tür für eine OpenADR-Verbindung
+  endgültig bleiben soll (11.1).~~ Erledigt in Abschnitt 12.
 - Die Auswahl der Bindung auf der gemeinsamen Verbindungsseite (11.3).
+
+## 12. Ausgeschaltet heißt „nicht jetzt“, nicht „nein“
+
+Die WebSocket-Tür von WWCP_Node unterscheidet jetzt zwei Antworten:
+
+- **`401 Unauthorized`, endgültig:** falsches Passwort, falsches Zertifikat,
+  unbekannter oder ausgeschalteter Login, falscher Pfad. Die Anmeldebremse
+  zählt mit, und der Client gibt auf (`Refused`).
+- **`503 Service Unavailable` mit `Retry-After`, für jetzt:** Ein Back End hat
+  sich richtig angemeldet, aber sein Verbindungseintrag ist ausgeschaltet. Die
+  Anmeldebremse zählt nicht mit, denn geraten wurde nichts.
+  `WebSocketSignIns.ASwitchedOffConnectionTriesAgainAfter` legt den Wert von
+  `Retry-After` fest (60 Sekunden). Die `503` kommt erst nach der Anmeldung,
+  ein Fremder erfährt also nichts über ausgeschaltete Einträge.
+
+Die Clients in WWCP_Node, die selbst neu verbinden (Netzbetreiber, Zähler,
+PKI), nehmen `408`, `429` und jede `5xx` als „nicht jetzt“. So unterscheidet
+auch Hermods Reconnect-Policy. Der Zustand wird `Trying`, und der nächste
+Versuch kommt nach `Retry-After`, höchstens nach `WWCPNode.MaxRetryAfter`
+(fünf Minuten) und frühestens nach der eigenen Wartezeit (drei Sekunden).
+OCPP-Verbindungen nutzen Hermods Reconnect-Policy und taten das schon vorher.
+
+Die Regel gilt für alle Back Ends, die sich unter dem Namen eines Eintrags
+anmelden. Neben dem VEN ist das auch eine Registrierungsstelle an ihrer PKI.
+
+Tests:
+
+- **Netzbetreiber:** Ein ausgeschalteter Eintrag bekommt `503` mit
+  `Retry-After` und ohne `WWW-Authenticate`, ein falsches Passwort `401`.
+- **`LC_2_GO`:** Wird die Verbindung aus- und wieder eingeschaltet, kommt der
+  LocalController auch über WebSocket von selbst wieder, ohne Neustart.
+  Dazwischen steht seine Verbindung auf `Trying`.
+- **`CSMS_2_PKI`:** Eine ausgeschaltete Verbindung zur PKI steht über
+  WebSocket auf `Trying` statt auf `Refused`.

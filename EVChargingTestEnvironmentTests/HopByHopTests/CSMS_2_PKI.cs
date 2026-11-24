@@ -641,8 +641,9 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
         /// <summary>
         /// A registration authority whose connection the PKI switched off is not
-        /// let in - over a WebSocket its WebSocket is refused, over SSH nothing
-        /// is served on its subsystem - and has nothing signed.
+        /// let in - over a WebSocket it is turned away for now, and goes on
+        /// trying, over SSH nothing is served on its subsystem - and has nothing
+        /// signed.
         /// </summary>
         [TestCase("ws")]
         [TestCase("ssh")]
@@ -656,7 +657,9 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             var (login, connection, inbound) = await TheCSMSConnects(authPassword, Transport, Enabled: false);
 
             if (Transport == "ws")
-                await Until(() => StatusOf(csms, connection) == ConnectionStatus.Refused, $"'{login}' being refused", csms, pki);
+                await Until(() => StatusOf(csms, connection) == ConnectionStatus.Trying &&
+                                  csms.ConnectionStates.TryGetValue(connection, out var state) && state.Said.Contains("turned it away for now"),
+                            $"'{login}' being turned away for now", csms, pki);
 
             Assert.That(async () => await csms.SignCertificateAtThePKI(connection, new SignCertificateRequest(ACSR("CS-0004"), StationLabel), TimeSpan.FromSeconds(3)),
                         Throws.Exception,

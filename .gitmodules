@@ -79,3 +79,6 @@
 [submodule "libs/DNSServer"]
 	path = libs/DNSServer
 	url = https://github.com/OpenChargingCloud/DNSServer.git
+[submodule "libs/LogServer"]
+	path = libs/LogServer
+	url = https://github.com/OpenChargingCloud/LogServer.git

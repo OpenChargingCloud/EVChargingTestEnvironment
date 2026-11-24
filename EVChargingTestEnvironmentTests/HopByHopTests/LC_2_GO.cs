@@ -28,6 +28,7 @@ using org.GraphDefined.Vanaheimr.Hermod.SSH;
 using org.GraphDefined.Vanaheimr.Hermod.HTTP;
 using org.GraphDefined.Vanaheimr.Hermod.SSH.Client;
 
+using cloud.charging.open.protocols.WWCP.Node.Logins;
 using cloud.charging.open.protocols.WWCP.Node.OpenADR;
 using cloud.charging.open.protocols.WWCP.Node.TestKit;
 using cloud.charging.open.protocols.WWCP.Node.Connections;
@@ -88,6 +89,10 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         public async Task Start()
         {
 
+            // A controller turned away for now, its connection switched off,
+            // is asked to try again soon - not after a minute.
+            WebSocketSignIns.ASwitchedOffConnectionTriesAgainAfter = TimeSpan.FromSeconds(1);
+
             // One fixture runs every test: each starts with nodes of their own.
             gridDirectory        = null;
             gridHTTPPort         = null;
@@ -112,6 +117,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         [TearDown]
         public async Task Stop()
         {
+
+            WebSocketSignIns.ASwitchedOffConnectionTriesAgainAfter = TimeSpan.FromSeconds(60);
 
             if (controller is not null)
             {
@@ -739,8 +746,8 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
         /// <summary>
         /// A VEN whose connection the grid operator switched off is not let in -
-        /// over a WebSocket its WebSocket is refused, over SSH nothing is served
-        /// on its subsystem - and it reads no limit.
+        /// over a WebSocket it is turned away for now, and goes on trying, over
+        /// SSH nothing is served on its subsystem - and it reads no limit.
         /// </summary>
         [TestCase("ws",  bindingREST)]
         [TestCase("ssh", bindingREST)]
@@ -762,7 +769,10 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
                         Is.True, error);
 
             if (Transport == "ws")
-                await Until(() => StatusOf(controller, connection) == ConnectionStatus.Refused, $"'{login}' being refused", controller, grid);
+                await Until(() => controller.ConnectionStates.TryGetValue(connection, out var state) &&
+                                  state.Status == ConnectionStatus.Trying &&
+                                  state.Said.Contains("turned it away for now"),
+                            $"'{login}' being turned away for now", controller, grid);
 
             var problem = await controller.PollOpenADR();
 
@@ -1087,10 +1097,9 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
         /// The grid operator switches off the connection a controller is in over:
         /// the controller is let go of at once - not when its connection drops
         /// some time - and is not let in again; switched on, it connects again
-        /// and reads the limit of its point. Over SSH it connects again by
-        /// itself; over a WebSocket the refusal of the door was final to it, as
-        /// every refusal of a WebSocket is, and it connects again once it starts
-        /// anew.
+        /// and reads the limit of its point - by itself, over SSH as over a
+        /// WebSocket, whose door turned it away for now with a 503 and a
+        /// Retry-After meanwhile, not for good.
         /// </summary>
         [TestCase("ws",  bindingREST)]
         [TestCase("ws",  bindingMessages)]
@@ -1118,14 +1127,11 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
                 Assert.That(StatusOf(controller, connection),       Is.Not.EqualTo(ConnectionStatus.Connected));
             });
 
-            SwitchTheConnection(inbound, On: true);
-
+            // Turned away for now, not for good: still trying.
             if (Transport != "ssh")
-            {
-                Assert.That(StatusOf(controller, connection), Is.EqualTo(ConnectionStatus.Refused), $"The refusal of the door was not final to the controller.{Story(controller, grid)}");
-                await RestartTheController();
-                controller = this.controller!;
-            }
+                await Until(() => StatusOf(controller, connection) == ConnectionStatus.Trying, "the controller trying again, turned away for now by the door", controller, grid);
+
+            SwitchTheConnection(inbound, On: true);
 
             await Until(() => StatusOf(controller, connection) == ConnectionStatus.Connected, "the controller connecting again once its connection is on", controller, grid);
             await Until(() => StatusOf(grid,       inbound)    == ConnectionStatus.Connected, "the grid operator letting it in again",                     controller, grid);
