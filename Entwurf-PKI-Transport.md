@@ -369,8 +369,10 @@ Servers, ein Befehl zum Auflisten und die Unterklassen von
 - Die Seite der Verbindungen kennt die Typen von OCPI, Modbus und
   OpenADR (`useOf`, wie `ConnectionEntry.UseOf`). Das Formular fragt,
   was der gewählte Typ trägt: die Version von OCPP, die von OCPI, die
-  Bindung von OpenADR, bei einem VEN den VEN. Bei einem Wechsel des Typs
-  zeichnet es sich sofort neu (`pickType`); Getipptes bleibt stehen.
+  Bindung von OpenADR, bei einem VEN, der sich verbindet, den VEN. Bei
+  einem Wechsel des Typs oder des Häkchens "Die andere Seite verbindet
+  sich" zeichnet es sich sofort neu (`pickType`, `tickInbound`);
+  Getipptes bleibt stehen.
   Gesendet wird jedes Feld nur für den Typ, der es trägt.
 - `WebSocketLoginRoutes.WhyGroupStays`: eine Gruppe, die der Knoten
   braucht, wird mit `409` abgelehnt. Der Zähler nutzt das für die vier
@@ -388,8 +390,3 @@ Servers, ein Befehl zum Auflisten und die Unterklassen von
   angelegter Login meldet sich wirklich an, und die Befehle.
 - WWCP_Node, Frontend: die Felder für OCPI, OpenADR und VEN sowie `holds`.
 
-### 10.3 Offen
-
-- Das Feld des VEN folgt dem Typ, nicht aber dem Häkchen "Die andere
-  Seite verbindet sich": Es steht bei jedem VEN da und wird nur für
-  einen VEN geschickt, der sich verbindet.
