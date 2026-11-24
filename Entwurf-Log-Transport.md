@@ -99,8 +99,9 @@ JSON-Objekt je Zeile, die ältesten zuerst.
 - **Woher:** Schreibt der Knoten Log-Dateien (`LogPath`, eine Datei je Tag),
   liest es die Dateien der angefragten Tage, so weit sie zurückreichen.
   Schreibt er keine, liefert es, was das Event-Log im Speicher hält (die
-  letzten 2000 Einträge). Eine Zeile aus einer Datei hat kein `id`, weil die
-  Datei keins kennt.
+  letzten 2000 Einträge). Eine Zeile aus einer Datei hat ihre `data`, aber kein
+  `id`: Die Nummer zählt nur im Knoten, und die Datei, die für Menschen
+  geschrieben ist, führt sie nicht.
 - **Wie viel:** höchstens 64 MiB (`NodeLogFiles.MaxBytes`), unter den 100 MiB,
   die der Log-Server annimmt. Steckt in der angefragten Zeit mehr, gehen die
   neuesten Einträge mit, und die erste Zeile sagt, wie viele ältere fehlen.
@@ -297,10 +298,11 @@ fehl (401 erwartet, 503 bekommen). Ursache ist WWCP_Node `168d938`
 - **Ob die GetLog-URL mit Passwort in einem Nachrichten-Log von OCPP landet**
   (Debug-Log, HTTP-SSE der Knoten), ist nicht geprüft.
 - ~~**Das Log ist nur das Event-Log im Speicher.**~~ Erledigt, siehe 4.3: Wo der
-  Knoten Log-Dateien schreibt, werden sie gelesen. Was die Dateien nicht haben,
-  fehlt auch im Upload: die Nummer und die `data` eines Eintrags. Eine Meldung
-  ohne Tags, die mit einer Klammer aus Kleinbuchstaben beginnt, wird als Tags
-  gelesen.
+  Knoten Log-Dateien schreibt, werden sie gelesen. `FileLog` schreibt die
+  `data` eines Eintrags jetzt hinter einem Tab mit, und eine Meldung ohne Tags,
+  die mit `[` beginnt, hinter leeren Klammern (`[] `). Damit ist beides beim
+  Zurücklesen eindeutig. Dateien von vorher werden weiter gelesen: Klammern mit
+  Großbuchstaben gelten dort als Meldung. Die Nummer bleibt draußen, siehe 4.3.
 - **`InvalidFileServerCertificate` beim CSMS** ist nicht Ende zu Ende geprüft.
   Die Tests sehen nur das Log des Knotens. Beim LC hängt das Melden an
   `csms.url`, nicht an den Verbindungen.
@@ -308,8 +310,11 @@ fehl (401 erwartet, 503 bekommen). Ursache ist WWCP_Node `168d938`
   dasselbe `StartUpload`, haben aber keinen Test Ende zu Ende.
 - **Das Gateway** hat keine `DeviceModelBridge` und keinen `FileProvider`. Ein
   `GetLog` an das Gateway selbst lädt nichts hoch.
-- **Reste im Log-Server:** Eine `.part`-Datei, die nie umbenannt wird, bleibt
-  in `.sftp-incoming` liegen.
+- ~~**Reste im Log-Server:** Eine `.part`-Datei bleibt liegen.~~ Erledigt: Beim
+  Start nimmt der Log-Server jede `.part`-Datei in `.sftp-incoming` weg, weil vor
+  dem Start niemand hochlädt. Im Betrieb nimmt er bei jedem SFTP-Upload die weg,
+  die länger als einen Tag nicht geschrieben wurden
+  (`UnfinishedSftpUploadsKeptFor`).
 
 ## 7. UpdateFirmware über HTTP, HTTPS und SFTP vom Download-Server
 
@@ -344,9 +349,16 @@ User-Agent: WWCP-Node/1.0
 | sonst | wie beim Upload (4.1) | wie beim Upload |
 
 **Der Validator** ist das starke ETag der ersten Antwort, sonst ihr
-`Last-Modified`. `FileTransfers` reicht ihn von Versuch zu Versuch weiter
-(`FileTransferResult.Validator`). Die angefangene Datei öffnet es dafür nicht
-mehr zum Anhängen, sondern an ihrem Ende, damit sie gekürzt werden kann.
+`Last-Modified`. Sagt der Server keins von beiden, steht die Länge der Datei
+dafür (`length:<Bytes>`). Die geht nicht als `If-Range` mit, wird aber nach der
+Antwort verglichen: Ist der Rest (206) der einer Datei anderer Länge, wird das
+Angefangene abgeschnitten und die Datei einmal ganz angefragt. Über SFTP ist
+der Validator Größe und Änderungszeit der Datei (`sftp:<Bytes>:<Sekunden>`), per
+`STAT` vor dem Lesen gefragt. Weichen sie ab, wird das Angefangene
+abgeschnitten und ab Byte 0 gelesen. `FileTransfers` reicht den Validator von
+Versuch zu Versuch weiter (`FileTransferResult.Validator`). Die angefangene
+Datei öffnet es dafür nicht mehr zum Anhängen, sondern an ihrem Ende, damit sie
+gekürzt werden kann.
 
 **Eine Weiterleitung** wird geprüft wie die URL einer Anfrage: Sie muss in
 einem Verzeichnis eines HTTP-Fileservers der Konfiguration liegen, der
@@ -523,8 +535,10 @@ Daneben grün:
   seinem Host in `httpFileServers` stehen.
 - ~~**Ein Server ohne Ranges** wird nicht gefragt, ob es noch dieselbe Datei
   ist.~~ Erledigt, siehe 7.1: `If-Range`, und eine geänderte Datei wird von
-  vorn gelesen. Ein Server, der weder ETag noch `Last-Modified` schickt, wird
-  weiter nicht gefragt. Über SFTP gibt es keinen Validator.
+  vorn gelesen. Ohne ETag und `Last-Modified` dient die Länge als Validator,
+  über SFTP Größe und Änderungszeit. Unerkannt bleibt nur eine Datei, die sich
+  ändert und dabei Länge und Zeit behält, oder bei einem HTTP-Server ohne
+  ETag und Zeit dieselbe Länge.
 - ~~**`FileTransfers.MaxDownloadSize`** setzt bei CS und LC nichts.~~ Erledigt,
   siehe 7.2. Noch offen: Das CSMS kann die Grenze nicht lesen, es gibt keine
   Variable im Device Model. Ohne `Content-Length` (chunked) greift die Prüfung
@@ -557,6 +571,12 @@ sollen.
   `PUT /api/v1/downloadServer/files/{area}/{name}`, oder durch Ablegen im
   Verzeichnis. Über API und SFTP wird erst unter verstecktem Namen geschrieben
   und dann umbenannt, damit niemand eine halbe Datei lädt.
+- Eine Datei, die größer ist, als der Web-Server in einer Anfrage nimmt (8 MiB),
+  sendet die Web-Oberfläche in Stücken von 4 MiB: `PUT …?offset=N`, das letzte
+  mit `&final=true`. Jedes Stück hängt an eine versteckte Datei des
+  Veröffentlichenden für diesen Namen an. Ein Stück an einem anderen Offset
+  bekommt 409 mit `received`, `offset=0` beginnt neu, und das letzte Stück legt
+  die Datei an ihren Platz.
 - `SHA-256` jeder Datei wird gemerkt und neu gerechnet, wenn sich Größe oder
   Schreibzeit ändern. Er ist auch das `ETag`.
 
@@ -570,6 +590,15 @@ sollen.
 Jeder Download wird in `files/downloads.jsonl` aufgezeichnet: wer, welche
 Datei, ab welchem Byte, wie viele Bytes, wie groß die Datei war, von wo.
 Abgewiesene Anfragen (401, 403, 404) werden nur gezählt.
+
+Über HTTP zählen die Bytes, die der Server von der Datei gelesen und
+abgeschickt hat. Aufgezeichnet wird, sobald das letzte gelesen ist, also bevor
+es abgeht. Hört der Client vorher auf, wird nichts mehr gelesen. Nach
+`UnfinishedDownloadAfter` (10 Minuten) ohne Lesen wird mit dem bis dahin
+Gelesenen aufgezeichnet, und die Datei wird geschlossen. Was angekommen ist,
+kann der Server nicht wissen: Was in den TCP-Puffern lag, zählt als gesendet.
+Eine kleine Datei steht deshalb ganz da, auch wenn der Client sie verworfen
+hat.
 
 **Konfiguration** (`downloadServer`): `directory`, `areas`, `http`,
 `httpListen`, `httpPort`, `anonymousHTTP`, `sftp`, `maxFileSize`. Die
@@ -596,12 +625,10 @@ Veröffentlichung hinterließ. Dazu 62 Seitentests der Web-Oberfläche.
 
 **Offen**
 
-- **Über die Web-Oberfläche** nimmt der HTTP-Server eines Knotens höchstens
-  8 MiB in einer Anfrage. Größere Images gehen über SFTP oder ins Verzeichnis.
-  Die Seite sagt das und prüft die Größe vor dem Senden.
-- **Die Aufzeichnung über HTTP** zählt die Bytes, die die Antwort trägt, nicht
-  die, die wirklich angekommen sind. Bricht der Client ab, steht trotzdem die
-  volle Zahl da. Über SFTP zählen die gelesenen Bytes.
+- ~~**Über die Web-Oberfläche** höchstens 8 MiB.~~ Erledigt: Größere Dateien
+  gehen in Stücken, siehe oben.
+- ~~**Die Aufzeichnung über HTTP** zählt, was die Antwort tragen soll.~~
+  Erledigt: Sie zählt, was gelesen und abgeschickt wurde, siehe oben.
 - **Ein Programm** wie `LogServerCLI`, das den Download-Server allein startet,
   gibt es noch nicht.
 - **Die Web-Oberfläche** ist gebaut, eingebettet und von den Seitentests

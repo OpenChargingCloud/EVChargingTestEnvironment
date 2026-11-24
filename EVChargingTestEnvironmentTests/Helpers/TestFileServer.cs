@@ -108,6 +108,12 @@ namespace cloud.charging.open.TestEnvironment.Tests
         public Boolean                                 IgnoresRange  { get; set; }
 
         /// <summary>
+        /// Whether it says what a file is - its ETag. A server that does not
+        /// says neither an ETag nor a time of writing, only a length.
+        /// </summary>
+        public Boolean                                 SaysETags     { get; set; } = true;
+
+        /// <summary>
         /// The files it has, by their path: those put, and those given to it to
         /// serve.
         /// </summary>
@@ -420,6 +426,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
                     Int32? breakAfter = breaks.TryDequeue(out var after) ? after : null;
 
                     var etag          = ETagOf(file);
+                    var tagged        = SaysETags ? $"ETag: {etag}\r\n" : "";
 
                     // "bytes=<from>-": the rest from there - of the same file only,
                     // where an If-Range names one.
@@ -432,16 +439,16 @@ namespace cloud.charging.open.TestEnvironment.Tests
                     {
 
                         if (from >= file.Length)
-                            return (416, $"Content-Range: bytes */{file.Length}\r\nETag: {etag}\r\n", [], null);
+                            return (416, $"Content-Range: bytes */{file.Length}\r\n{tagged}", [], null);
 
                         return (206,
-                                $"Content-Range: bytes {from}-{file.Length - 1}/{file.Length}\r\nETag: {etag}\r\nContent-Type: application/octet-stream\r\n",
+                                $"Content-Range: bytes {from}-{file.Length - 1}/{file.Length}\r\n{tagged}Content-Type: application/octet-stream\r\n",
                                 file[(Int32) from..],
                                 breakAfter);
 
                     }
 
-                    return (200, $"ETag: {etag}\r\nContent-Type: application/octet-stream\r\nAccept-Ranges: " + (IgnoresRange ? "none" : "bytes") + "\r\n", file, breakAfter);
+                    return (200, $"{tagged}Content-Type: application/octet-stream\r\nAccept-Ranges: " + (IgnoresRange ? "none" : "bytes") + "\r\n", file, breakAfter);
 
                 default:
                     return (405, "Allow: GET, PUT\r\n", [], null);

@@ -672,11 +672,19 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
             Assert.That(node.ConfigFile.TryReplaceSection(FileTransfers.MaxDownloadSizeKey, new JValue(Image.Length - 1), out error), Is.True, error);
 
+            downloadServer!.UnfinishedDownloadAfter = TimeSpan.FromSeconds(1);
+
             var (tooLarge, tooLargeId) = await UpdateFirmware(DownloadServerURL(), Retries: 2);
 
             Accepted(tooLarge);
 
             Assert.That(await UntilTold(tooLargeId), Is.EqualTo(FirmwareStatus.DownloadFailed), $"An image larger than allowed was told as something else.{Story(node, downloadServer, csms)}");
+
+            // The node took nothing of it: the download server records what it
+            // sent off once nothing more is read - after a second here. An image
+            // this small lies in the buffers of the connection whole by then.
+            await Until(() => Recorded.Count >= 2, "The download server recording the download the node gave up", node, downloadServer);
+            await Task.Delay(TimeSpan.FromSeconds(1.5));
 
             Assert.Multiple(() => {
                 Assert.That(Recorded,                         Has.Count.EqualTo(2),  "An image larger than allowed was asked for again.");
@@ -859,6 +867,46 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
                 Assert.That(File.ReadAllBytes(Staged(requestId)),              Is.EqualTo(newer),                    "The image the node keeps is not the new one, whole - or has a part of the first.");
                 Assert.That(node!.Log.Recent(200).Select(entry => entry.Message),
                             Has.Some.Contains("changed since the attempt before"),                                   "The node's log does not say that the image changed.");
+            });
+
+        }
+
+        #endregion
+
+        #region HTTP_AnImageOfAnotherLengthMeanwhile_FromAServerWithoutETags_IsFetchedAnew()
+
+        /// <summary>
+        /// A firmware server of the test's own that says no ETag and no time of
+        /// writing breaks off the first GET, and then has an image of another
+        /// length in the place of the first. The node asks for the rest with a
+        /// Range only - there is nothing an If-Range could name -, sees the rest
+        /// is of a file of another length, cuts away what it had and asks for
+        /// the new image whole: it keeps the new one, byte for byte.
+        /// </summary>
+        [Test]
+        public async Task HTTP_AnImageOfAnotherLengthMeanwhile_FromAServerWithoutETags_IsFetchedAnew()
+        {
+
+            var newer                  = RandomNumberGenerator.GetBytes(250_000);
+            var server                 = ATestServerWithTheImage();
+
+            server.SaysETags           = false;
+            server.BreakNextAfter(100_000);
+            server.ReplaceAfterNext(ImagePath, newer);
+
+            var (response, requestId)  = await UpdateFirmware(server.URL(ImagePath), Retries: 2);
+
+            Accepted(response);
+
+            Assert.That(await UntilTold(requestId), Is.EqualTo(FirmwareStatus.Downloaded), $"The image was not downloaded at last.{Story(node, csms)}");
+
+            var requests = server.Requests.ToArray();
+
+            Assert.Multiple(() => {
+                Assert.That(requests.Select(request => request.Answered),             Is.EqualTo(new[] { 200, 206, 200 }), "The rest of another file was not left, and the new one asked for whole.");
+                Assert.That(requests[1].Headers.ContainsKey("If-Range"),              Is.False,                            "An If-Range was sent with nothing to name.");
+                Assert.That(requests[2].Headers.ContainsKey("Range"),                 Is.False,                            "The new image was not asked for whole.");
+                Assert.That(File.ReadAllBytes(Staged(requestId)),                     Is.EqualTo(newer),                   "The image the node keeps is not the new one, whole - or has a part of the first.");
             });
 
         }
