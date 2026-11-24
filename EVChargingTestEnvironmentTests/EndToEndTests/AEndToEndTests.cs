@@ -462,6 +462,10 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             while (nodeDirectories.TryDequeue(out var directory))
                 TestParties.Remove(directory);
 
+            // Its nodes have stopped: the CA their TLS put into the Windows
+            // store comes out of it again.
+            InstalledAuthorities.Remove(testCA);
+
             testCA?.   Dispose();
             testCAKey?.Dispose();
 
