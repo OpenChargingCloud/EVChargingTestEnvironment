@@ -732,11 +732,10 @@ zugestellt, eine nach der anderen.
   Verbindung und Bindung der VTN erreicht wird, ob ein Abo besteht, wie viele
   Benachrichtigungen kamen und wann zuletzt gefragt wurde. `/state` liefert
   dazu `transport`, `binding`, `subscribed` und `notificationsReceived`.
-- **Gemeinsame Verbindungsseite:** Die Bindung auswählen lässt sich dort noch
-  nicht. Eine andere Sitzung verlegt die Seite gerade nach WWCP_Node
-  (`Frontend/src/connecting`) und baut dort Verbindungs- und Login-Seiten. Die
-  Auswahl `openADRBinding` (messages/rest) für die Typen GridOperator und VEN
-  gehört in diese verlegte Seite.
+- **Gemeinsame Verbindungsseite** (WWCP_Node, `Frontend/src/connecting`, von
+  Netzbetreiber und LocalController genutzt): Für die Typen GridOperator und
+  VEN fragt sie nach der Bindung (`openADRBinding`, messages oder rest), für
+  VEN auch nach dem VEN. Gebaut in WWCP_Node `95c742d`.
 
 ### 11.4 Tests
 
@@ -761,7 +760,8 @@ zugestellt, eine nach der anderen.
   Broker extern, und der Netzbetreiber veröffentlicht als Client.
 - ~~Ob eine Abweisung an der WebSocket-Tür für eine OpenADR-Verbindung
   endgültig bleiben soll (11.1).~~ Erledigt in Abschnitt 12.
-- Die Auswahl der Bindung auf der gemeinsamen Verbindungsseite (11.3).
+- ~~Die Auswahl der Bindung auf der gemeinsamen Verbindungsseite (11.3).~~
+  Erledigt in WWCP_Node `95c742d`.
 
 ## 12. Ausgeschaltet heißt „nicht jetzt“, nicht „nein“
 
