@@ -42,13 +42,13 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
     public class LC_2_Log : AToTheLogServer
     {
 
-        #region (protected override) NewUploader(DNSClient) / UploaderName / BeforeConnecting(CSMS, Login)
+        #region (protected override) NewNode(DNSClient) / NodeName / BeforeConnecting(CSMS, Login)
 
         /// <summary>
         /// A local controller of its own directory, reporting upwards, known to
         /// its CSMS by its id.
         /// </summary>
-        protected override async Task<(OCPPServingNode Node, User_Id Login)> NewUploader(DNSClient DNSClient)
+        protected override async Task<(OCPPServingNode Node, User_Id Login)> NewNode(DNSClient DNSClient)
         {
 
             var directory   = NewNodeDirectory("lc", ReportsUpwards());
@@ -68,7 +68,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
         }
 
-        protected override String UploaderName
+        protected override String NodeName
             => "The local controller";
 
         /// <summary>

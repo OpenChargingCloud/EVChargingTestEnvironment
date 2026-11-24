@@ -1,6 +1,8 @@
 # Entwurf: GetLog über HTTP, HTTPS und SFTP zum Log-Server
 
 Stand 2026-11-24. Gilt für `CS_2_Log` und `LC_2_Log`. Gebaut, siehe Abschnitt 6.
+Dazu `UpdateFirmware` über HTTP und HTTPS (`CS_2_Firmware`, `LC_2_Firmware`),
+siehe Abschnitt 7.
 
 ## 1. Ziel
 
@@ -274,8 +276,8 @@ fehl (401 erwartet, 503 bekommen). Ursache ist WWCP_Node `168d938`
 
 ### 6.4 Offen
 
-- **Downloads über HTTP** (`UpdateFirmware` mit `http(s)://`) bleiben
-  `NotSupported`.
+- ~~**Downloads über HTTP** (`UpdateFirmware` mit `http(s)://`) bleiben
+  `NotSupported`.~~ Gebaut, siehe Abschnitt 7.
 - **`httpFileServers` gibt es nur in der Datei.** Es fehlen HTTP-API, Seite,
   Kommandozeile und eine Variable im Device Model, wie sie die SSH-Peers haben.
   Das Passwort steht im Klartext in der Konfiguration.
@@ -294,3 +296,125 @@ fehl (401 erwartet, 503 bekommen). Ursache ist WWCP_Node `168d938`
   `GetLog` an das Gateway selbst lädt nichts hoch.
 - **Reste im Log-Server:** Eine `.part`-Datei, die nie umbenannt wird, bleibt
   in `.sftp-incoming` liegen.
+
+## 7. UpdateFirmware über HTTP und HTTPS
+
+Die Gegenrichtung derselben Schicht. `FileTransfers.StartDownload` nahm nur
+`sftp://`, ein `UpdateFirmware` mit `http(s)://` ergab `NotSupported`. Jetzt
+holt der Knoten ein Firmware-Image mit `GET` von einem HTTP-Fileserver seiner
+Konfiguration.
+
+### 7.1 Was über die Leitung geht
+
+```
+GET /<Pfad>/<Datei> HTTP/1.1
+Range: bytes=<Offset>-                    (ab dem zweiten Versuch, wenn schon etwas da ist)
+Authorization: Basic <login:passwort>     (falls es welche gibt)
+User-Agent: WWCP-Node/1.0
+```
+
+| Antwort | Ergebnis | Neuer Versuch |
+|---|---|---|
+| 200 | `Done`. War schon etwas da, werden die ersten `Offset` Bytes übergangen | – |
+| 206 mit `Content-Range` ab `Offset` | `Done`, angehängt | – |
+| 206 ab einem anderen Byte | `RejectedByServer` | nein |
+| 416 mit `Content-Range: bytes */<Offset>` | `Done`: es fehlte nichts mehr | – |
+| Body bricht ab | `Unreachable` | ja, ab dem erreichten Byte |
+| 404, 410 | `NoSuchFile` | nein |
+| Weiterleitung (3xx) | `RejectedByServer`: wird nicht verfolgt | nein |
+| größer als `MaxDownloadSize` (laut `Content-Length` oder `Content-Range`, sonst beim Lesen) | `TooLarge` | nein |
+| sonst | wie beim Upload (4.1) | wie beim Upload |
+
+Dem CSMS gemeldet wird wie über SFTP: `Downloading`, bei jedem neuen Versuch
+`DownloadPaused` und wieder `Downloading`, am Ende `Downloaded` oder
+`DownloadFailed`. Das Image liegt dann als `<RequestId>-<Datei>` im
+Staging-Verzeichnis `downloads/` neben der Konfiguration. Was danach kommt
+(Signatur prüfen, installieren), gehört dem `FileConsumer` und ist nicht Teil
+des Transports.
+
+### 7.2 Die Konfiguration
+
+`httpFileServers` hat jetzt `directions`, wie die SSH-Peers:
+
+```json
+{ "id": "firmware", "url": "https://updates.example.org/firmware/",
+  "directions": [ "download" ] }
+```
+
+- Ohne `directions` gelten beide Richtungen.
+- Ein Upload braucht `upload`, ein Download braucht `download`, sonst ist die
+  Anfrage `FileServerNotPermitted`.
+- Ein Download muss unterhalb des Verzeichnisses liegen und eine Datei nennen.
+  Eine URL, die auf `/` endet, ist `InvalidURL`.
+
+### 7.3 Was gebaut ist
+
+**WWCP_Node**
+
+- `HTTPFileServer` hat `Directions`, `Ways`, `Allows(Direction)` und
+  `AllowsPath(Direction, …)` statt `AllowsDirectory`.
+- `JudgeHTTPFileTransfer(URL, Direction)` und `FileNameOf(Uri)`.
+- `DownloadFileOverHTTPAsync(URL, Destination, Offset, MaxSize, …)`.
+- Upload und Download teilen sich die Anmeldung (`SignIn`), die Wertung der
+  Antworten (`Failed`) sowie Client, Zertifikatsprüfung, Leerlauf und
+  Fehlerbehandlung (`TransferOverHTTP`).
+
+**WWCP_OCPP**
+
+- `FileTransfers.StartDownload` und der geplante Download nehmen
+  `https://` und `http://`.
+- Der Dateiname kommt aus dem letzten Pfadsegment.
+- Vor einem geplanten Download (`RetrieveTimestamp`) wird beim Fälligwerden
+  wieder über den richtigen Weg geurteilt.
+
+**Superprojekt**
+
+- `AFileTransferTest`: was Log- und Firmware-Tests teilen. Das sind das CSMS,
+  der Knoten, der sich mit `ws://` und Passwort verbindet und angenommen wird,
+  `HoldsTheHTTPFileServers` und `ATestServer`. `AToTheLogServer` baut darauf
+  auf.
+- Der Testserver heißt jetzt `TestFileServer` (vorher `HTTPLogServer`).
+  Dazugekommen sind:
+  - `GET` mit `Range`, also 206 und 416;
+  - `BreakNextAfter(…)`: bricht den Body nach N Bytes ab;
+  - `IgnoresRange`: ein Server ohne Ranges;
+  - bei `AnswerNext(302)` ein `Location` zu einem anderen Host.
+- `AToTheFirmwareServer.cs` enthält alle Fälle. `CS_2_Firmware.cs` und
+  `LC_2_Firmware.cs` erzeugen nur den Knoten.
+
+### 7.4 Tests
+
+`CS_2_Firmware` und `LC_2_Firmware` je 9 Fälle, zusammen 18, alle grün. Mit
+`CS_2_Log` und `LC_2_Log` sind es 44.
+
+| Test | Was er zeigt |
+|---|---|
+| `HTTP_DownloadsAFirmwareImage` | Ein `GET` ohne Range und ohne Login. `Downloading`, `Downloaded`. Das Image liegt Byte für Byte im Staging-Verzeichnis |
+| `HTTPS_DownloadsAFirmwareImage_SigningInAsTheURLSays` | Server mit Basic Auth über TLS, geglaubt über die Test-CA. Login aus der URL, das Passwort nie im Log |
+| `HTTP_TakesUpWhereTheAttemptBeforeStopped` | Abbruch nach 100000 Bytes. Dann `DownloadPaused`, `Downloading` und `Range: bytes=100000-`, beantwortet mit 206. Das Image ist ganz |
+| `HTTP_AServerWithoutRanges_IsReadFromWhereItStopped` | Server ohne Ranges: zweimal 200. Der schon geholte Teil wird übergangen, nichts ist doppelt |
+| `HTTP_TriesAgain_AfterTheServerFailed` | 503, dann 200. `DownloadPaused` dazwischen |
+| `HTTP_AMissingImage_IsDownloadFailed` | 404: `DownloadFailed`, kein zweiter Versuch trotz `Retries: 3` |
+| `HTTP_ARedirect_IsNotFollowed` | 302 zu einem anderen Host: `DownloadFailed`, eine Anfrage. Das Log sagt „is not followed“ |
+| `HTTPS_FetchesNothing_FromAServerItDoesNotBelieve` | Zertifikat nicht geglaubt: keine Anfrage, eine Verbindung, nichts im Staging-Verzeichnis |
+| `HTTP_RefusesWhatItsConfigurationDoesNotName` | Anderes Verzeichnis, anderer Port, Server nur für Uploads: `FileServerNotPermitted`. URL ohne Datei, Query: `InvalidURL`. `ftp://`: `NotSupported`. Kein Server wird erreicht, nichts wird gemeldet |
+
+Daneben grün: WWCP_Node `FileTransfer`/`Sftp` (51), WWCP_OCPP_Node
+`FileTransferBridgeTests` (13).
+
+### 7.5 Offen
+
+- **Weiterleitungen** werden nie verfolgt, auch nicht zu einem Server, den die
+  Konfiguration nennt. Firmware hinter einem CDN mit Redirect lädt so nicht.
+- **Ein Server ohne Ranges** liefert ab dem zweiten Versuch alles von vorn.
+  Der Knoten übergeht den Teil, den er schon hat, prüft aber nicht, ob es noch
+  dieselbe Datei ist (kein `If-Range` mit ETag). Ob das Image echt ist,
+  entscheidet erst die Signatur danach.
+- **`FileTransfers.MaxDownloadSize`** setzt bei CS und LC nichts: Es gibt dafür
+  keine Konfiguration und keine Variable im Device Model. Ohne Grenze wird
+  geholt, so viel der Server sagt. Die Prüfung selbst ist gebaut, aber ohne
+  Test Ende zu Ende.
+- **`SignedUpdateFirmware` und `UpdateFirmware` von OCPP 1.6 über HTTP** laufen
+  durch dasselbe `StartDownload`, haben aber keinen Test Ende zu Ende.
+- **Firmware über SFTP** hat im Superprojekt noch keinen Test wie
+  `CS_2_Firmware`. Die Bibliothek prüft es in `FileTransferBridgeTests`.

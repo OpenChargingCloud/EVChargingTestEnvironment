@@ -42,12 +42,12 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
     public class CS_2_Log : AToTheLogServer
     {
 
-        #region (protected override) NewUploader(DNSClient) / UploaderName
+        #region (protected override) NewNode(DNSClient) / NodeName
 
         /// <summary>
         /// A charging station of its own directory, known to its CSMS by its id.
         /// </summary>
-        protected override async Task<(OCPPServingNode Node, User_Id Login)> NewUploader(DNSClient DNSClient)
+        protected override async Task<(OCPPServingNode Node, User_Id Login)> NewNode(DNSClient DNSClient)
         {
 
             var directory  = NewNodeDirectory("cs");
@@ -68,7 +68,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
         }
 
-        protected override String UploaderName
+        protected override String NodeName
             => "The charging station";
 
         #endregion

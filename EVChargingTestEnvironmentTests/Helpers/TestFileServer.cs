@@ -33,17 +33,19 @@ namespace cloud.charging.open.TestEnvironment.Tests
 {
 
     /// <summary>
-    /// A log server of the test's own: HTTP/1.1, or HTTPS with a certificate
-    /// it is given, that takes a file with a PUT - and writes nothing over:
-    /// with "If-None-Match: *" a file that is there is answered 412. It may
-    /// ask for HTTP Basic authentication, and may be told to answer the next
-    /// requests with a status of the test's choosing.
+    /// A file server of the test's own: HTTP/1.1, or HTTPS with a certificate
+    /// it is given. It takes a file with a PUT and writes nothing over - with
+    /// "If-None-Match: *" a file that is there is answered 412 -, and serves
+    /// a file with a GET, from a byte on where a Range asks so (206). It may
+    /// ask for HTTP Basic authentication, may be told to answer the next
+    /// requests with a status of the test's choosing, to break off a GET after
+    /// some bytes, and to pass over a Range.
     /// </summary>
     /// <remarks>
-    /// One request per connection, as the node's uploads make one PUT per
-    /// attempt: what arrived and what was answered is kept for the test.
+    /// One request per connection, as the node's transfers make one request
+    /// per attempt: what arrived and what was answered is kept for the test.
     /// </remarks>
-    public sealed class HTTPLogServer : IAsyncDisposable
+    public sealed class TestFileServer : IAsyncDisposable
     {
 
         #region Received
@@ -66,6 +68,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
         private readonly CancellationTokenSource          stop       = new();
         private readonly Task                             accepting;
         private readonly ConcurrentQueue<Int32>           answers    = new();
+        private readonly ConcurrentQueue<Int32>           breaks     = new();
 
         #endregion
 
@@ -74,7 +77,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
         /// <summary>
         /// The port it listens on, on 127.0.0.1.
         /// </summary>
-        public Int32                                   Port       { get; }
+        public Int32                                   Port          { get; }
 
         /// <summary>
         /// Whether it speaks TLS.
@@ -85,22 +88,29 @@ namespace cloud.charging.open.TestEnvironment.Tests
         /// <summary>
         /// The login of HTTP Basic authentication it asks for, or null.
         /// </summary>
-        public String?                                 User       { get; init; }
+        public String?                                 User          { get; init; }
 
         /// <summary>
         /// Its password.
         /// </summary>
-        public String?                                 Password   { get; init; }
+        public String?                                 Password      { get; init; }
 
         /// <summary>
-        /// The files it took, by their path.
+        /// Whether a GET is answered with the whole file, whatever Range it
+        /// asks for: a server that does not take ranges.
         /// </summary>
-        public ConcurrentDictionary<String, Byte[]>    Files      { get; } = new();
+        public Boolean                                 IgnoresRange  { get; set; }
+
+        /// <summary>
+        /// The files it has, by their path: those put, and those given to it to
+        /// serve.
+        /// </summary>
+        public ConcurrentDictionary<String, Byte[]>    Files         { get; } = new();
 
         /// <summary>
         /// Every request that arrived, in order.
         /// </summary>
-        public ConcurrentQueue<Received>               Requests   { get; } = new();
+        public ConcurrentQueue<Received>               Requests      { get; } = new();
 
         /// <summary>
         /// How many connections were made to it: also those that ended in the
@@ -115,7 +125,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
         #region Constructor(s)
 
-        private HTTPLogServer(X509Certificate2? Certificate)
+        private TestFileServer(X509Certificate2? Certificate)
         {
 
             certificate  = Certificate;
@@ -129,15 +139,15 @@ namespace cloud.charging.open.TestEnvironment.Tests
         }
 
         /// <summary>
-        /// A log server over HTTP, listening.
+        /// A file server over HTTP, listening.
         /// </summary>
-        public static HTTPLogServer OverHTTP(String? User = null, String? Password = null)
+        public static TestFileServer OverHTTP(String? User = null, String? Password = null)
             => new (null) { User = User, Password = Password };
 
         /// <summary>
-        /// A log server over HTTPS with the given certificate, listening.
+        /// A file server over HTTPS with the given certificate, listening.
         /// </summary>
-        public static HTTPLogServer OverHTTPS(X509Certificate2 Certificate, String? User = null, String? Password = null)
+        public static TestFileServer OverHTTPS(X509Certificate2 Certificate, String? User = null, String? Password = null)
             => new (Certificate) { User = User, Password = Password };
 
         #endregion
@@ -153,7 +163,7 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
         #endregion
 
-        #region AnswerNext(params Statuses)
+        #region AnswerNext(params Statuses) / BreakNextAfter(params Bytes)
 
         /// <summary>
         /// Answer the next requests with the given statuses, one each - whatever
@@ -165,12 +175,23 @@ namespace cloud.charging.open.TestEnvironment.Tests
                 answers.Enqueue(status);
         }
 
+        /// <summary>
+        /// Break off the next GETs that serve a file after the given number of
+        /// bytes of it, one each: the connection is closed in the middle of
+        /// the body.
+        /// </summary>
+        public void BreakNextAfter(params Int32[] Bytes)
+        {
+            foreach (var bytes in Bytes)
+                breaks.Enqueue(bytes);
+        }
+
         #endregion
 
         #region FilesIn(Directory)
 
         /// <summary>
-        /// The files it took in the given directory, by their names.
+        /// The files it has in the given directory, by their names.
         /// </summary>
         public IReadOnlyDictionary<String, Byte[]> FilesIn(String Directory)
         {
@@ -276,16 +297,20 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
                 var body        = await ReadBody(reader, headers);
 
-                var status      = Answer(method, path, headers, body);
+                var (status, extra, content, breakAfter) = Answer(method, path, headers, body);
 
                 Requests.Enqueue(new Received(method, path, headers, body, status));
 
                 var response    = $"HTTP/1.1 {status} {Reason(status)}\r\n" +
-                                  (status == 401 ? "WWW-Authenticate: Basic realm=\"logs\"\r\n" : "") +
-                                  "Content-Length: 0\r\n" +
+                                  (status == 401 ? "WWW-Authenticate: Basic realm=\"files\"\r\n" : "") +
+                                  extra +
+                                  $"Content-Length: {content.Length}\r\n" +
                                   "Connection: close\r\n\r\n";
 
                 await stream.WriteAsync(Encoding.ASCII.GetBytes(response), stop.Token);
+
+                // Broken off in the middle of the body: the connection simply ends.
+                await stream.WriteAsync(content.AsMemory(0, breakAfter is Int32 after ? Math.Min(after, content.Length) : content.Length), stop.Token);
                 await stream.FlushAsync(stop.Token);
 
             }
@@ -296,17 +321,14 @@ namespace cloud.charging.open.TestEnvironment.Tests
 
         #region (private) Answer(Method, Path, Headers, Body)
 
-        private Int32 Answer(String                        Method,
-                             String                        Path,
-                             Dictionary<String, String>    Headers,
-                             Byte[]                        Body)
+        private (Int32 Status, String Headers, Byte[] Content, Int32? BreakAfter) Answer(String                        Method,
+                                                                                          String                        Path,
+                                                                                          Dictionary<String, String>    Headers,
+                                                                                          Byte[]                        Body)
         {
 
             if (answers.TryDequeue(out var told))
-                return told;
-
-            if (Method != "PUT")
-                return 405;
+                return (told, told is >= 300 and < 400 ? $"Location: http://127.0.0.2:{Port}{Path}\r\n" : "", [], null);
 
             if (User is not null)
             {
@@ -314,28 +336,69 @@ namespace cloud.charging.open.TestEnvironment.Tests
                 var expected = "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes($"{User}:{Password}"));
 
                 if (!Headers.TryGetValue("Authorization", out var authorization) || authorization != expected)
-                    return 401;
+                    return (401, "", [], null);
 
             }
 
-            if (Headers.TryGetValue("If-None-Match", out var ifNoneMatch) && ifNoneMatch.Trim() == "*" && Files.ContainsKey(Path))
-                return 412;
+            switch (Method)
+            {
 
-            return Files.TryAdd(Path, Body)
-                       ? 201
-                       : 412;
+                case "PUT":
+
+                    if (Headers.TryGetValue("If-None-Match", out var ifNoneMatch) && ifNoneMatch.Trim() == "*" && Files.ContainsKey(Path))
+                        return (412, "", [], null);
+
+                    return Files.TryAdd(Path, Body)
+                               ? (201, "", [], null)
+                               : (412, "", [], null);
+
+                case "GET":
+
+                    if (!Files.TryGetValue(Path, out var file))
+                        return (404, "", [], null);
+
+                    Int32? breakAfter = breaks.TryDequeue(out var after) ? after : null;
+
+                    // "bytes=<from>-": the rest from there.
+                    if (!IgnoresRange &&
+                        Headers.TryGetValue("Range", out var range) &&
+                        range.StartsWith("bytes=", StringComparison.OrdinalIgnoreCase) &&
+                        range[6..].Split('-')[0] is String fromText &&
+                        Int64.TryParse(fromText, NumberStyles.None, CultureInfo.InvariantCulture, out var from))
+                    {
+
+                        if (from >= file.Length)
+                            return (416, $"Content-Range: bytes */{file.Length}\r\n", [], null);
+
+                        return (206,
+                                $"Content-Range: bytes {from}-{file.Length - 1}/{file.Length}\r\nContent-Type: application/octet-stream\r\n",
+                                file[(Int32) from..],
+                                breakAfter);
+
+                    }
+
+                    return (200, "Content-Type: application/octet-stream\r\nAccept-Ranges: " + (IgnoresRange ? "none" : "bytes") + "\r\n", file, breakAfter);
+
+                default:
+                    return (405, "Allow: GET, PUT\r\n", [], null);
+
+            }
 
         }
 
         private static String Reason(Int32 Status)
 
             => Status switch {
+                   200 => "OK",
                    201 => "Created",
+                   206 => "Partial Content",
+                   302 => "Found",
                    401 => "Unauthorized",
                    403 => "Forbidden",
                    404 => "Not Found",
                    405 => "Method Not Allowed",
                    412 => "Precondition Failed",
+                   416 => "Range Not Satisfiable",
                    500 => "Internal Server Error",
                    503 => "Service Unavailable",
                    _   => "Status"

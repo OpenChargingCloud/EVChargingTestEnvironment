@@ -67,77 +67,49 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
     /// </summary>
     /// <remarks>
     /// The same for every node that uploads its log: the node is the kind's to
-    /// make (<see cref="NewUploader"/>), and everything else is here. What a
+    /// make (<see cref="AFileTransferTest.NewNode"/>), and everything else is here. What a
     /// log server does not do on purpose - fail, or have the file already - a
-    /// log server of the test's own does (<see cref="HTTPLogServer"/>).
+    /// log server of the test's own does (<see cref="TestFileServer"/>).
     /// </remarks>
-    public abstract class AToTheLogServer : AHopByHopTest
+    public abstract class AToTheLogServer : AFileTransferTest
     {
 
         #region Data
 
-        protected DNSClient?        dnsClient;
-        protected CSMS.CSMS?        csms;
-        protected OCPPServingNode?  uploader;
-        protected User_Id           login;
-
         protected LogServerNode?    logServer;
         protected String            uploaderPassword  = "";
 
-        private readonly ConcurrentQueue<IAsyncDisposable>                            testServers  = new();
         private readonly ConcurrentQueue<(Int32? RequestId, UploadLogStatus Status)>  told         = new();
         private          Int32                                                        requestIds   = 100;
 
+        /// <summary>
+        /// The node that uploads its log.
+        /// </summary>
+        protected OCPPServingNode? uploader
+            => node;
+
         #endregion
 
-        #region SetUp / TearDown
+        #region HearsOf(CSMS) / TearDown
 
-        [SetUp]
-        public async Task Start()
+        /// <summary>
+        /// What the node tells of its uploads.
+        /// </summary>
+        protected override void HearsOf(CSMS.CSMS CSMS)
         {
 
-            dnsClient          = new DNSClient(SearchForIPv6DNSServers: false);
+            told.Clear();
 
-            var csmsDirectory  = NewServedNodeDirectory("csms");
-
-            csms               = new CSMS.CSMS(
-                                     DNSClient:        dnsClient,
-                                     HTTPPort:         TestPorts.Free(),
-                                     AccountsPath:     csmsDirectory.Accounts,
-                                     ConfigFile:       csmsDirectory.ConfigFile,
-                                     LogToConsole:     false,
-                                     BridgeDebugLog:   false
-                                 );
-
-            await csms.Start();
-
-            // What the node tells of its uploads.
-            csms.Node.OCPP.IN.OnLogStatusNotificationRequestReceived += (timestamp, sender, connection, request, cancellationToken) => {
+            CSMS.Node.OCPP.IN.OnLogStatusNotificationRequestReceived += (timestamp, sender, connection, request, cancellationToken) => {
                 told.Enqueue((request.LogRequestId, request.Status));
                 return Task.CompletedTask;
             };
 
-            (uploader, login)  = await NewUploader(dnsClient);
-
-            await TheUploaderConnectsToItsCSMS();
-
         }
 
         [TearDown]
-        public async Task Stop()
+        public async Task StopTheLogServer()
         {
-
-            if (uploader is not null)
-            {
-                await uploader.Stop();
-                await uploader.DisposeAsync();
-            }
-
-            if (csms is not null)
-            {
-                await csms.Stop();
-                await csms.DisposeAsync();
-            }
 
             if (logServer is not null)
             {
@@ -145,74 +117,6 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
                 await logServer.DisposeAsync();
                 logServer = null;
             }
-
-            while (testServers.TryDequeue(out var server))
-                await server.DisposeAsync();
-
-            told.Clear();
-
-        }
-
-        #endregion
-
-
-        #region (protected abstract) NewUploader(DNSClient) / UploaderName / BeforeConnecting(CSMS, Login)
-
-        /// <summary>
-        /// The node that uploads its log, started, and the login it connects to
-        /// its CSMS under - its own name in the overlay network.
-        /// </summary>
-        protected abstract Task<(OCPPServingNode Node, User_Id Login)> NewUploader(DNSClient DNSClient);
-
-        /// <summary>
-        /// What the node that uploads its log is called in a description.
-        /// </summary>
-        protected abstract String UploaderName { get; }
-
-        /// <summary>
-        /// What the CSMS is to know of the node before it connects.
-        /// </summary>
-        protected virtual void BeforeConnecting(CSMS.CSMS  CSMS,
-                                                User_Id    Login)
-        { }
-
-        #endregion
-
-        #region (private) TheUploaderConnectsToItsCSMS()
-
-        /// <summary>
-        /// The node connects to its CSMS over ws:// with a password and is
-        /// accepted: what the CSMS asks of it - a GetLog - reaches it, and what it
-        /// tells - a LogStatusNotification - reaches the CSMS.
-        /// </summary>
-        private async Task TheUploaderConnectsToItsCSMS()
-        {
-
-            var description  = I18NString.Create($"{UploaderName} --(ws/password)--> {csms!.OCPP.NodeId}");
-            var credentials  = Credentials(uploader!, csms, login, authPassword, description);
-
-            BeforeConnecting(csms, login);
-
-            Assert.That(
-                uploader!.Connections.TryAddConnection(
-                    description,
-                    URL.Parse($"ws://{login}@127.0.0.1:{csms.OCPPServerSettings.TCPPort}"),
-                    "CSMS",
-                    true,
-                    credentials,
-                    null,
-                    out var connection,
-                    out var error
-                ),
-                Is.True, error
-            );
-
-            await Until(() => StatusOf(uploader, connection!) == ConnectionStatus.Connected, $"'{login}' connecting to its CSMS", uploader, csms);
-
-            // Sent by no node by itself: asked for, as after a reboot.
-            _ = uploader.SendBootNotifications();
-
-            await Until(() => RegistrationOf(uploader) == "Accepted",                       $"'{login}' being accepted by its CSMS", uploader, csms);
 
         }
 
@@ -300,14 +204,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
         #endregion
 
-        #region (protected) Identity / UploadPort / LogServerURL(...) / TheLogServer(...)
-
-        /// <summary>
-        /// The node's identity at a file server: its uploader at the log server,
-        /// its directory there, and what "{id}" stands for.
-        /// </summary>
-        protected String Identity
-            => uploader!.FileTransferIdentity;
+        #region (protected) UploadPort / LogServerURL(...) / TheLogServer(...)
 
         /// <summary>
         /// The port the log server takes HTTP uploads on.
@@ -338,27 +235,6 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
                     new Uri($"{(logServer!.UploadsOverHTTPS ? "https" : "http")}://127.0.0.1:{UploadPort}/{{id}}/"),
                     User,
                     Password);
-
-        #endregion
-
-        #region (protected) HoldsTheHTTPFileServers(params Servers)
-
-        /// <summary>
-        /// The node's configuration names the given HTTP file servers, and no
-        /// other: "httpFileServers" of its file, read when a request is judged.
-        /// </summary>
-        protected void HoldsTheHTTPFileServers(params HTTPFileServer[] Servers)
-        {
-
-            Assert.That(uploader!.ConfigFile.TryReplaceSection(HTTPFileServer.SectionName,
-                                                               new JArray(Servers.Select(server => server.ToJSON())),
-                                                               out var error),
-                        Is.True, error);
-
-            Assert.That(uploader.HTTPFileServers.Select(server => server.Id), Is.EquivalentTo(Servers.Select(server => server.Id)),
-                        $"The node does not hold the HTTP file servers it was given.{Story(uploader)}");
-
-        }
 
         #endregion
 
@@ -471,18 +347,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
 
         #endregion
 
-        #region (protected) ATestServer(...) / Directory
-
-        /// <summary>
-        /// A log server of the test's own, over HTTP, that does what the log
-        /// server does not do on purpose: fail, or have the file already.
-        /// </summary>
-        protected HTTPLogServer ATestServer()
-        {
-            var server = HTTPLogServer.OverHTTP();
-            testServers.Enqueue(server);
-            return server;
-        }
+        #region (protected) Directory
 
         /// <summary>
         /// The node's own directory at a log server of the test's own.
