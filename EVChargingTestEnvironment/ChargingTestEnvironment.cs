@@ -714,6 +714,16 @@ namespace cloud.charging.open.TestEnvironment
             if (sharedServer is not null)
                 await sharedServer.Stop();
 
+            // What Windows' TLS put into the intermediate CA stores while the
+            // OCPP side spoke TLS goes again: nothing else would take it out.
+            var (removed, problems) = Certificates.OCPP.RemoveFromIntermediateStores();
+
+            if (removed > 0)
+                Console.Say("env", $"{removed} OCPP test CA{(removed == 1 ? "" : "s")} taken out of the intermediate CA stores again.");
+
+            foreach (var problem in problems)
+                Console.Say("env", problem);
+
             started = false;
 
         }

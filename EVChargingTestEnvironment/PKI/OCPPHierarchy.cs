@@ -28,6 +28,8 @@ using Org.BouncyCastle.X509;
 
 using org.GraphDefined.Vanaheimr.Hermod.PKI;
 
+using DotNetX509 = System.Security.Cryptography.X509Certificates;
+
 #endregion
 
 namespace cloud.charging.open.TestEnvironment.PKI
@@ -58,7 +60,18 @@ namespace cloud.charging.open.TestEnvironment.PKI
     /// <para>
     /// Built with Hermod's own <see cref="PKIFactory"/> - the code that made
     /// the signing requests in the first place, which is the shortest way to be
-    /// sure that what is signed is what was asked for.
+    /// sure that what is signed is what was asked for. Its subject names are a
+    /// common name and nothing else: PKIFactory writes the "CN=" itself.
+    /// </para>
+    /// <para>
+    /// <b>What Windows keeps of it.</b> Where a node serves or presents a
+    /// certificate of this hierarchy, .NET's TLS on Windows checks whether the
+    /// operating system can build its chain, and - this root being trusted
+    /// nowhere - adds the CAs of the chain to "Intermediate Certification
+    /// Authorities", of the local machine where it may write there, else of the
+    /// current user. Nothing takes them out again: every start left another
+    /// "OCPP Test Server CA". <see cref="RemoveFromIntermediateStores"/> does,
+    /// once the environment stopped.
     /// </para>
     /// </remarks>
     public sealed class OCPPHierarchy
@@ -149,14 +162,14 @@ namespace cloud.charging.open.TestEnvironment.PKI
 
             var rootKeyPair      = PKIFactory.GenerateECCKeyPair(Curve);
             var rootCertificate  = PKIFactory.CreateRootCACertificate(
-                                       $"CN=OCPP Test Root CA{suffix}, O=EV Charging Test Environment, C=DE",
+                                       $"OCPP Test Root CA{suffix}",
                                        rootKeyPair,
                                        rootLifetime
                                    );
 
             var serverCAKeyPair  = PKIFactory.GenerateECCKeyPair(Curve);
             var serverCA         = PKIFactory.CreateIntermediateCA(
-                                       $"CN=OCPP Test Server CA{suffix}, O=EV Charging Test Environment, C=DE",
+                                       $"OCPP Test Server CA{suffix}",
                                        serverCAKeyPair.Public,
                                        rootKeyPair.Private,
                                        rootCertificate,
@@ -166,7 +179,7 @@ namespace cloud.charging.open.TestEnvironment.PKI
 
             var clientCAKeyPair  = PKIFactory.GenerateECCKeyPair(Curve);
             var clientCA         = PKIFactory.CreateIntermediateCA(
-                                       $"CN=OCPP Test Client CA{suffix}, O=EV Charging Test Environment, C=DE",
+                                       $"OCPP Test Client CA{suffix}",
                                        clientCAKeyPair.Public,
                                        rootKeyPair.Private,
                                        rootCertificate,
@@ -292,6 +305,90 @@ namespace cloud.charging.open.TestEnvironment.PKI
                 );
 
             }
+
+        }
+
+        #endregion
+
+
+        #region RemoveFromIntermediateStores()
+
+        /// <summary>
+        /// Take the root and the two CAs of this hierarchy out of the
+        /// intermediate CA stores of the local machine and of the current user,
+        /// wherever Windows' TLS put them, by thumbprint. Does nothing on other
+        /// operating systems than Windows.
+        /// </summary>
+        /// <remarks>
+        /// The local machine's store first: the current user's lists the
+        /// machine's certificates as well, but cannot take them out. A store
+        /// that cannot be opened or a certificate that cannot be removed is
+        /// said, not thrown: what is left behind costs time, not correctness.
+        /// </remarks>
+        /// <returns>How many certificates were removed, and what went wrong.</returns>
+        public (Int32 Removed, IReadOnlyList<String> Problems) RemoveFromIntermediateStores()
+        {
+
+            if (!OperatingSystem.IsWindows())
+                return (0, []);
+
+            var thumbprints  = new[] { RootCertificate, ServerCA, ClientCA }.
+                                   Select(certificate => Convert.ToHexString(SHA1.HashData(certificate.GetEncoded()))).
+                                   ToArray();
+
+            var problems     = new List<String>();
+
+            var removed      = RemoveFrom(DotNetX509.StoreLocation.LocalMachine, thumbprints, problems) +
+                               RemoveFrom(DotNetX509.StoreLocation.CurrentUser,  thumbprints, problems);
+
+            return (removed, problems);
+
+        }
+
+        private static Int32 RemoveFrom(DotNetX509.StoreLocation  Location,
+                                        String[]                  Thumbprints,
+                                        List<String>              Problems)
+        {
+
+            using var store = new DotNetX509.X509Store(DotNetX509.StoreName.CertificateAuthority, Location);
+
+            try
+            {
+                store.Open(DotNetX509.OpenFlags.ReadWrite | DotNetX509.OpenFlags.OpenExistingOnly);
+            }
+            catch (CryptographicException e)
+            {
+
+                // The machine's store, unelevated, is the usual case and needs
+                // no word: nothing can have been added there either.
+                if (Location != DotNetX509.StoreLocation.LocalMachine)
+                    Problems.Add($@"{Location}\CA could not be opened: {e.Message}");
+
+                return 0;
+
+            }
+
+            var removed = 0;
+
+            foreach (var thumbprint in Thumbprints)
+                foreach (var installed in store.Certificates.Find(DotNetX509.X509FindType.FindByThumbprint, thumbprint, validOnly: false))
+                {
+                    try
+                    {
+                        store.Remove(installed);
+                        removed++;
+                    }
+                    catch (CryptographicException e)
+                    {
+                        Problems.Add($@"{installed.Subject} could not be taken out of {Location}\CA: {e.Message}");
+                    }
+                    finally
+                    {
+                        installed.Dispose();
+                    }
+                }
+
+            return removed;
 
         }
 
