@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
-Draws the overview of the EV charging test environment once for every CLI
+Draws the overview of the EV charging test environment once for every
 repository below libs/, with the circle of that repository filled pastel red,
 writes it to libs/<repo>/docs/EVChargingTestEnvironment.svg and puts it as the
-first image below the heading of libs/<repo>/README.md.
+first image below the heading of libs/<repo>/README.md - and the same into
+<repo>CLI beside the test environment (../<repo>CLI), where that repository
+has a README.
 
     EV -> CS -> LC -> GW -> CSMS -> RN -> EMSP
     CS, LC -> EM        LC -> GO        EV, CS, EMSP -> SP
@@ -144,18 +146,40 @@ def put_into_readme(readme: pathlib.Path, alt: str) -> bool:
     return True
 
 
+def draw_into(base: pathlib.Path, node: str, alt: str) -> None:
+    target  = base / SVG_PATH
+    picture = svg(node).encode()
+    # An SVG that shows the same is left as it is, and one drawn anew keeps the
+    # line endings the checkout gave it: git would see a change otherwise.
+    if target.is_file():
+        old = target.read_bytes()
+        if old.replace(b"\r\n", b"\n") != picture:
+            target.write_bytes(picture.replace(b"\n", b"\r\n") if b"\r\n" in old else picture)
+    else:
+        target.parent.mkdir(exist_ok=True)
+        target.write_bytes(picture)
+    changed = put_into_readme(base / "README.md", alt)
+    print(f"{base.name:24} {node:8} README {'changed' if changed else 'as it was'}")
+
+
 def main() -> None:
     for repo, (node, name) in REPOS.items():
-        base = ROOT / "libs" / repo
-        if not base.is_dir():
-            print(f"{repo}: not there", file=sys.stderr)
-            continue
-        target = base / SVG_PATH
-        target.parent.mkdir(exist_ok=True)
-        target.write_bytes(svg(node).encode())
         alt = f"The EV charging test environment, {name} ({NODES[node][0]}) highlighted"
-        changed = put_into_readme(base / "README.md", alt)
-        print(f"{repo:22} {node:8} README {'changed' if changed else 'as it was'}")
+
+        base = ROOT / "libs" / repo
+        if base.is_dir():
+            draw_into(base, node, alt)
+        else:
+            print(f"{repo}: not there", file=sys.stderr)
+
+        # The command line repository beside the test environment, where there
+        # is one with a README of its own: ModbusTLSEnergyMeterCLI is a folder
+        # of ModbusTLSEnergyMeter, and has none.
+        cli = ROOT.parent / f"{repo}CLI"
+        if (cli / "README.md").is_file():
+            draw_into(cli, node, alt)
+        else:
+            print(f"{cli.name:24} {node:8} no README, skipped")
 
 
 if __name__ == "__main__":
