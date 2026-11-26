@@ -137,7 +137,7 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
             var directory  = NewNodeDirectory("log");
             var home       = Path.GetDirectoryName(directory.ConfigFile.Path)!;
 
-            JProperty[] web = [];
+            JProperty[] tls = [];
 
             if (Secure)
             {
@@ -148,13 +148,11 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
                 File.WriteAllText(Path.Combine(home, "fullchain.pem"), fullChain);
                 File.WriteAllText(Path.Combine(home, "privkey.pem"),   privateKey);
 
-                // The web interface's certificate, which the upload port shows as well.
-                web = [ new JProperty("web", new JObject(
-                            new JProperty("tls", new JObject(
-                                new JProperty("certificate", new JObject(
-                                    new JProperty("fullchain",   Path.Combine(home, "fullchain.pem")),
-                                    new JProperty("privateKey",  Path.Combine(home, "privkey.pem"))
-                                ))
+                // The upload port's own certificate, written as the web interface's is.
+                tls = [ new JProperty("tls", new JObject(
+                            new JProperty("certificate", new JObject(
+                                new JProperty("fullchain",   Path.Combine(home, "fullchain.pem")),
+                                new JProperty("privateKey",  Path.Combine(home, "privkey.pem"))
                             ))
                         )) ];
 
@@ -168,15 +166,17 @@ namespace cloud.charging.open.TestEnvironment.Tests.Connections.HopByHop
                                          [
                                              new JProperty("nts",        TestParties.NoTimeServers),
                                              new JProperty(LogServerSettings.SectionName, new JObject(
-                                                 new JProperty("httpListen",  "127.0.0.1"),
-                                                 new JProperty("httpPort",    TestPorts.Free().ToUInt16())
+                                                 [
+                                                     new JProperty("httpListen",  "127.0.0.1"),
+                                                     new JProperty("httpPort",    TestPorts.Free().ToUInt16()),
+                                                     .. tls
+                                                 ]
                                              )),
                                              new JProperty("ssh",        new JObject(
                                                  new JProperty("enabled",     true),
                                                  new JProperty("port",        TestPorts.Free().ToUInt16()),
                                                  new JProperty("sftp",        true)
-                                             )),
-                                             .. web
+                                             ))
                                          ]
                                      ).ToString()
                                  );
